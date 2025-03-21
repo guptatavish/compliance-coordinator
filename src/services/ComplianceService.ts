@@ -3,12 +3,19 @@ import { getPerplexityApiKey, PYTHON_API_URL } from "../utils/apiKeys";
 
 export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
 export type ComplianceLevel = 'high' | 'medium' | 'low';
+export type RequirementStatus = 'met' | 'partial' | 'not-met';
+export type RiskLevel = 'high' | 'medium' | 'low';
 
 export interface Requirement {
   id: string;
   title: string;
   description: string;
   isMet: boolean;
+  // Add the missing properties used in ComplianceAnalysis.tsx
+  status: RequirementStatus;
+  category: string;
+  risk: RiskLevel;
+  recommendation?: string;
 }
 
 export interface ComplianceResult {
@@ -24,7 +31,7 @@ export interface ComplianceResult {
   };
   requirementsList: Requirement[];
   recentChanges?: number;
-  error?: string; // Added optional error property
+  error?: string; // Optional error property
 }
 
 export interface CompanyProfile {

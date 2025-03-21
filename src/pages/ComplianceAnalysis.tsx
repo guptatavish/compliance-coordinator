@@ -147,10 +147,15 @@ const ComplianceAnalysis: React.FC = () => {
               
               if (analysisData) {
                 const analysisId = analysisData.id;
+                
                 const requirementsToInsert = result.requirementsList.map(req => ({
                   analysis_id: analysisId,
                   title: req.title,
                   description: req.description,
+                  category: req.category,
+                  status: req.status,
+                  risk: req.risk,
+                  recommendation: req.recommendation || null,
                   is_met: req.isMet
                 }));
                 
@@ -590,4 +595,6 @@ const ComplianceAnalysis: React.FC = () => {
 };
 
 export default ComplianceAnalysis;
+
+
 
