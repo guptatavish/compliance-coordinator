@@ -23,6 +23,7 @@ from flask_cors import CORS
 import requests
 import json
 import os
+import uuid
 from typing import Dict, List, Any, Optional
 
 app = Flask(__name__)
@@ -86,31 +87,39 @@ def get_compliance_from_perplexity(api_key: str, company_profile: Dict[str, Any]
     I need a compliance analysis for a {company_profile.get('companySize', '')} company in the {company_profile.get('industry', '')} industry 
     operating in {jurisdiction}. The company description is: {company_profile.get('description', 'No description provided')}.
     
-    Please provide:
+    Please provide a detailed compliance analysis with the following structure:
     1. A list of 5-8 key compliance requirements for this company in this jurisdiction
     2. For each requirement, provide:
+       - A unique ID (like "req1", "req2", etc.)
        - A short title
        - A brief description
-       - An assessment of whether this type of company would typically meet this requirement (true/false)
+       - A category (e.g., Data Protection, Financial Reporting, etc.)
+       - Status: whether this type of company would typically meet this requirement ("met", "partial", or "not-met")
+       - Risk level if not met ("high", "medium", or "low")
+       - A recommendation if the requirement is not fully met
     3. An overall compliance score (0-100)
     4. Overall risk level (high, medium, or low)
     5. Overall compliance status (compliant, partial, or non-compliant)
     
     Format your response as a JSON object with the following structure:
-    {
+    {{
       "requirements": [
-        {
+        {{
           "id": "req1",
           "title": "Requirement Title",
           "description": "Brief description of the requirement",
-          "isMet": true or false
-        },
+          "category": "Category Name",
+          "status": "met|partial|not-met",
+          "risk": "high|medium|low",
+          "recommendation": "Recommendation if not met",
+          "isMet": true|false
+        }},
         ...more requirements...
       ],
       "complianceScore": 75,
       "riskLevel": "medium",
       "status": "partial"
-    }
+    }}
     
     Respond ONLY with the JSON object, no other text.
     """
@@ -179,8 +188,13 @@ def format_compliance_response(compliance_data: Dict[str, Any], jurisdiction: st
     Returns:
         Formatted compliance response
     """
-    # Count the number of met requirements
+    # Add missing ID fields to requirements if needed
     requirements_list = compliance_data.get("requirements", [])
+    for i, req in enumerate(requirements_list):
+        if "id" not in req:
+            req["id"] = f"req{i+1}"
+    
+    # Count the number of met requirements
     met_count = sum(1 for req in requirements_list if req.get("isMet", False))
     total_count = len(requirements_list)
     
