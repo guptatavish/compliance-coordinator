@@ -5,15 +5,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import StatusChart from '../StatusChart';
 import { BookOpen, CheckSquare, Clock, Download, AlertTriangle } from 'lucide-react';
+import { ComplianceStatus, ComplianceLevel } from '../ComplianceCard';
+import { RequirementStatus, RiskLevel } from '../services/ComplianceService';
 
 interface Requirement {
   id: string;
   title: string;
   description: string;
   isMet: boolean;
-  status: string;
+  status: RequirementStatus;
   category: string;
-  risk: string;
+  risk: RiskLevel;
   recommendation?: string;
 }
 
@@ -23,8 +25,8 @@ interface JurisdictionDetailsProps {
     jurisdictionName: string;
     flag?: string;
     complianceScore: number;
-    status: string;
-    riskLevel: string;
+    status: ComplianceStatus;
+    riskLevel: ComplianceLevel;
     requirements: {
       total: number;
       met: number;

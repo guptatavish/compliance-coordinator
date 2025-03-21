@@ -1,4 +1,3 @@
-
 import { getPerplexityApiKey, PYTHON_API_URL } from "../utils/apiKeys";
 
 export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
@@ -115,24 +114,40 @@ export const analyzeComplianceWithPython = async (
     const result = await response.json();
     console.log('Received compliance data from Python backend:', result);
     
-    // Validate the result structure
-    if (!result || typeof result !== 'object' || !result.jurisdictionId) {
-      console.error('Invalid response format from Python backend:', result);
-      throw new Error('Invalid response format from Python backend');
+    // Enhanced validation of the result structure
+    if (!result) {
+      throw new Error('Empty response from Python backend');
     }
     
-    // Ensure requirementsList is always an array
-    if (!result.requirementsList) {
-      result.requirementsList = [];
+    if (typeof result !== 'object') {
+      throw new Error(`Invalid response type: expected object, got ${typeof result}`);
     }
     
-    return result;
+    // Validate and normalize essential fields
+    const normalizedResult: ComplianceResult = {
+      jurisdictionId: result.jurisdictionId || jurisdiction,
+      jurisdictionName: result.jurisdictionName || getJurisdictionName(jurisdiction),
+      flag: result.flag || getJurisdictionFlag(jurisdiction),
+      complianceScore: typeof result.complianceScore === 'number' ? result.complianceScore : 0,
+      status: validateComplianceStatus(result.status),
+      riskLevel: validateComplianceLevel(result.riskLevel),
+      requirements: {
+        total: typeof result.requirements?.total === 'number' ? result.requirements.total : 0,
+        met: typeof result.requirements?.met === 'number' ? result.requirements.met : 0,
+      },
+      requirementsList: Array.isArray(result.requirementsList) 
+        ? result.requirementsList.map(normalizeRequirement)
+        : [],
+    };
+    
+    return normalizedResult;
   } catch (error) {
     console.error('Error analyzing compliance:', error);
     // Return fallback data with error indication
     return {
       jurisdictionId: jurisdiction,
       jurisdictionName: getJurisdictionName(jurisdiction),
+      flag: getJurisdictionFlag(jurisdiction),
       complianceScore: 0,
       status: 'non-compliant' as ComplianceStatus,
       riskLevel: 'high' as ComplianceLevel,
@@ -145,6 +160,128 @@ export const analyzeComplianceWithPython = async (
     };
   }
 };
+
+/**
+ * Validates and normalizes a compliance status value
+ */
+function validateComplianceStatus(status: any): ComplianceStatus {
+  if (status === 'compliant' || status === 'partial' || status === 'non-compliant') {
+    return status;
+  }
+  
+  // Try to normalize string values that might be close
+  if (typeof status === 'string') {
+    const lowercaseStatus = status.toLowerCase();
+    if (lowercaseStatus.includes('comply') || lowercaseStatus.includes('compliant')) {
+      return 'compliant';
+    } else if (lowercaseStatus.includes('partial')) {
+      return 'partial';
+    } else if (lowercaseStatus.includes('non') || lowercaseStatus.includes('not')) {
+      return 'non-compliant';
+    }
+  }
+  
+  // Default fallback
+  return 'non-compliant';
+}
+
+/**
+ * Validates and normalizes a compliance level value
+ */
+function validateComplianceLevel(level: any): ComplianceLevel {
+  if (level === 'high' || level === 'medium' || level === 'low') {
+    return level;
+  }
+  
+  // Try to normalize string values that might be close
+  if (typeof level === 'string') {
+    const lowercaseLevel = level.toLowerCase();
+    if (lowercaseLevel.includes('high')) {
+      return 'high';
+    } else if (lowercaseLevel.includes('med')) {
+      return 'medium';
+    } else if (lowercaseLevel.includes('low')) {
+      return 'low';
+    }
+  }
+  
+  // Default fallback
+  return 'high';
+}
+
+/**
+ * Normalizes a requirement object to ensure it has all required fields
+ */
+function normalizeRequirement(req: any): Requirement {
+  if (!req || typeof req !== 'object') {
+    return {
+      id: `gen-${Math.random().toString(36).substring(2, 9)}`,
+      title: 'Unknown Requirement',
+      description: 'No description available',
+      isMet: false,
+      status: 'not-met',
+      category: 'General',
+      risk: 'high'
+    };
+  }
+  
+  return {
+    id: req.id || `gen-${Math.random().toString(36).substring(2, 9)}`,
+    title: req.title || 'Untitled Requirement',
+    description: req.description || 'No description provided',
+    isMet: !!req.isMet,
+    status: validateRequirementStatus(req.status),
+    category: req.category || 'General',
+    risk: validateRiskLevel(req.risk),
+    recommendation: req.recommendation
+  };
+}
+
+/**
+ * Validates and normalizes a requirement status
+ */
+function validateRequirementStatus(status: any): RequirementStatus {
+  if (status === 'met' || status === 'partial' || status === 'not-met') {
+    return status;
+  }
+  
+  // Try to normalize string values
+  if (typeof status === 'string') {
+    const lowercaseStatus = status.toLowerCase();
+    if (lowercaseStatus.includes('met') && !lowercaseStatus.includes('not')) {
+      return 'met';
+    } else if (lowercaseStatus.includes('partial')) {
+      return 'partial';
+    }
+  }
+  
+  // Default fallback
+  return 'not-met';
+}
+
+/**
+ * Validates and normalizes a risk level
+ */
+function validateRiskLevel(risk: any): RiskLevel {
+  if (risk === 'high' || risk === 'medium' || risk === 'low') {
+    return risk;
+  }
+  
+  // Try to normalize string values
+  if (typeof risk === 'string') {
+    const lowercaseRisk = risk.toLowerCase();
+    if (lowercaseRisk.includes('high')) {
+      return 'high';
+    } else if (lowercaseRisk.includes('med')) {
+      return 'medium';
+    } else if (lowercaseRisk.includes('low')) {
+      return 'low';
+    }
+  }
+  
+  // Default fallback
+  return 'high';
+}
 
 /**
  * Export a compliance report in the specified format
@@ -243,7 +380,7 @@ export const exportRegulatoryDocument = async (
 };
 
 /**
- * Get a jurisdiction name from its ID (placeholder implementation)
+ * Get a jurisdiction name from its ID
  */
 function getJurisdictionName(jurisdictionId: string): string {
   const jurisdictions: Record<string, string> = {
@@ -256,4 +393,20 @@ function getJurisdictionName(jurisdictionId: string): string {
   };
   
   return jurisdictions[jurisdictionId] || jurisdictionId;
+}
+
+/**
+ * Get a flag emoji for a jurisdiction
+ */
+function getJurisdictionFlag(jurisdictionId: string): string {
+  const flags: Record<string, string> = {
+    'us': '🇺🇸',
+    'eu': '🇪🇺',
+    'uk': '🇬🇧',
+    'sg': '🇸🇬',
+    'au': '🇦🇺',
+    // Add more as needed
+  };
+  
+  return flags[jurisdictionId] || '🏳️';
 }

@@ -9,8 +9,8 @@ interface JurisdictionData {
   jurisdictionName: string;
   flag?: string;
   complianceScore: number;
-  status: ComplianceStatus;  // Updated to use the specific type
-  riskLevel: ComplianceLevel;  // Updated to use the specific type
+  status: ComplianceStatus;
+  riskLevel: ComplianceLevel;
   requirements: {
     total: number;
     met: number;
