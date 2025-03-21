@@ -30,6 +30,9 @@ export interface ComplianceResult {
   };
   requirementsList: Requirement[];
   recentChanges?: number;
+  summary?: string;
+  fullReport?: string;
+  recommendations?: Recommendation[];
   error?: string; // Optional error property
 }
 
@@ -40,6 +43,25 @@ export interface CompanyProfile {
   description: string;
   currentJurisdictions: string[];
   targetJurisdictions: string[];
+  registrationNumber?: string;
+  address?: string;
+  website?: string;
+  phone?: string;
+  email?: string;
+  foundedYear?: string;
+  businessType?: string;
+}
+
+export interface Recommendation {
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  timeframe: string;
+}
+
+export interface UploadedDocument {
+  file_name: string;
+  content: string; // base64 encoded content
+  size: number;
 }
 
 export type ReportFormat = 'pdf' | 'excel' | 'csv';
@@ -62,10 +84,52 @@ export const checkPythonBackendHealth = async (): Promise<boolean> => {
 };
 
 /**
+ * Upload company documents for analysis
+ */
+export const uploadCompanyDocuments = async (
+  files: File[]
+): Promise<UploadedDocument[]> => {
+  try {
+    // First check if the Python backend is running
+    const isBackendHealthy = await checkPythonBackendHealth();
+    if (!isBackendHealthy) {
+      throw new Error('Python backend is not running or not accessible');
+    }
+    
+    // Create FormData for file upload
+    const formData = new FormData();
+    files.forEach(file => {
+      formData.append('files[]', file);
+    });
+    
+    console.log(`Uploading ${files.length} documents to Python backend`);
+    
+    const response = await fetch(`${PYTHON_API_URL}/upload-company-documents`, {
+      method: 'POST',
+      body: formData
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Document upload failed: ${response.status} - ${errorText}`);
+    }
+    
+    const result = await response.json();
+    console.log('Document upload response:', result);
+    
+    return result.documents || [];
+  } catch (error) {
+    console.error('Error uploading documents:', error);
+    throw error;
+  }
+};
+
+/**
  * Analyzes company compliance based on company profile and jurisdiction
  */
 export const analyzeComplianceWithPython = async (
-  jurisdiction: string
+  jurisdiction: string,
+  uploadedDocuments?: UploadedDocument[]
 ): Promise<ComplianceResult> => {
   try {
     // Get company profile from localStorage
@@ -98,7 +162,8 @@ export const analyzeComplianceWithPython = async (
       body: JSON.stringify({
         apiKey: perplexityApiKey,
         companyProfile,
-        jurisdiction
+        jurisdiction,
+        documents: uploadedDocuments || []
       }),
     });
     
@@ -109,6 +174,15 @@ export const analyzeComplianceWithPython = async (
     
     const result = await response.json();
     console.log('Received compliance data from Python backend:', result);
+    
+    // Process requirements to ensure they have the correct format
+    if (result.requirementsList) {
+      result.requirementsList = result.requirementsList.map((req: any) => ({
+        ...req,
+        isMet: req.status === 'met',
+      }));
+    }
+    
     return result;
   } catch (error) {
     console.error('Error analyzing compliance:', error);

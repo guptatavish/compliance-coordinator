@@ -14,7 +14,7 @@ Requirements:
 - flask-cors
 
 To run:
-1. Install dependencies: pip install flask requests flask-cors
+1. Install dependencies: pip install -r requirements.txt
 2. Run the server: python app.py
 """
 
@@ -28,6 +28,8 @@ import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import io
+import base64
+from compliance_evaluator import PerplexityComplianceEvaluator
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -74,11 +76,43 @@ def analyze_compliance():
             print(f"Using cached result for {cache_key}")
             return jsonify(stored_analysis_results[cache_key]['data']), 200
         
-        # Get compliance analysis from Perplexity API
-        compliance_data = get_compliance_from_perplexity(api_key, company_profile, jurisdiction)
+        # Extract any uploaded documents (if available)
+        documents = data.get('documents', [])
         
-        # Process and format the response
-        formatted_response = format_compliance_response(compliance_data, jurisdiction)
+        # Check if we have a Mistral API key for OCR
+        mistral_api_key = os.environ.get('MISTRAL_API_KEY')
+        
+        # Create a PerplexityComplianceEvaluator instance
+        evaluator = PerplexityComplianceEvaluator(
+            perplexity_api_key=api_key,
+            mistral_api_key=mistral_api_key
+        )
+        
+        # Run the compliance evaluation
+        evaluation_results = evaluator.evaluate_compliance(company_profile, documents)
+        
+        # Check for errors in the evaluation
+        if 'error' in evaluation_results:
+            return jsonify({"error": evaluation_results['error']}), 500
+        
+        # Format the response for the frontend
+        formatted_response = {
+            "jurisdictionId": jurisdiction,
+            "jurisdictionName": get_jurisdiction_name(jurisdiction),
+            "flag": get_jurisdiction_flag(jurisdiction),
+            "complianceScore": calculate_compliance_score(evaluation_results),
+            "status": determine_compliance_status(evaluation_results),
+            "riskLevel": determine_risk_level(evaluation_results),
+            "requirements": {
+                "total": len(evaluation_results.get('requirements', [])),
+                "met": sum(1 for req in evaluation_results.get('requirements', []) if req.get('status') == 'met')
+            },
+            "requirementsList": evaluation_results.get('requirements', []),
+            "summary": evaluation_results.get('summary', ''),
+            "fullReport": evaluation_results.get('content', ''),
+            "recommendations": evaluation_results.get('recommendations', []),
+            "recentChanges": 0  # Default to 0
+        }
         
         # Store the result in our cache
         stored_analysis_results[cache_key] = {
@@ -90,6 +124,8 @@ def analyze_compliance():
         
     except Exception as e:
         print(f"Error processing request: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": f"Failed to process request: {str(e)}"}), 500
 
 @app.route('/export-report/<format>', methods=['POST'])
@@ -223,6 +259,105 @@ def export_regulatory_doc():
         print(f"Error exporting regulatory document: {str(e)}")
         return jsonify({"error": f"Failed to export regulatory document: {str(e)}"}), 500
 
+@app.route('/upload-company-documents', methods=['POST'])
+def upload_company_documents():
+    """
+    Upload and process company documents for analysis.
+    
+    Expects a multipart form-data with files
+    """
+    try:
+        if 'files[]' not in request.files:
+            return jsonify({"error": "No files provided"}), 400
+            
+        files = request.files.getlist('files[]')
+        if not files or len(files) == 0:
+            return jsonify({"error": "No files provided"}), 400
+            
+        processed_documents = []
+        
+        for file in files:
+            # Process each file
+            file_content = file.read()
+            file_name = file.filename
+            
+            # Store base64 encoded content
+            document = {
+                "file_name": file_name,
+                "content": base64.b64encode(file_content).decode('utf-8'),
+                "size": len(file_content)
+            }
+            
+            processed_documents.append(document)
+            
+        return jsonify({
+            "message": f"Successfully processed {len(processed_documents)} documents",
+            "documents": processed_documents
+        }), 200
+            
+    except Exception as e:
+        print(f"Error processing documents: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to process documents: {str(e)}"}), 500
+
+def calculate_compliance_score(evaluation_results):
+    """Calculate a compliance score based on requirements."""
+    requirements = evaluation_results.get('requirements', [])
+    if not requirements:
+        return 50  # Default score if no requirements
+        
+    # Calculate based on requirement status
+    total = len(requirements)
+    met = sum(1 for req in requirements if req.get('status') == 'met')
+    partial = sum(1 for req in requirements if req.get('status') == 'partial')
+    
+    # Partial requirements count as half
+    score = (met + (partial * 0.5)) / total * 100
+    
+    # Adjust based on risk factors
+    high_risks = sum(1 for risk in evaluation_results.get('risks', []) if risk.get('level') == 'high')
+    if high_risks > 0:
+        # Reduce score based on number of high risks
+        score = max(10, score - (high_risks * 5))
+        
+    return round(score)
+
+def determine_compliance_status(evaluation_results):
+    """Determine overall compliance status."""
+    score = calculate_compliance_score(evaluation_results)
+    
+    if score >= 80:
+        return "compliant"
+    elif score >= 50:
+        return "partial"
+    else:
+        return "non-compliant"
+
+def determine_risk_level(evaluation_results):
+    """Determine overall risk level."""
+    risks = evaluation_results.get('risks', [])
+    requirements = evaluation_results.get('requirements', [])
+    
+    # Count high risks
+    high_risks = sum(1 for risk in risks if risk.get('level') == 'high')
+    high_risk_reqs = sum(1 for req in requirements if req.get('risk') == 'high' and req.get('status') != 'met')
+    
+    # If we have multiple high risks, overall risk is high
+    if high_risks > 0 or high_risk_reqs > 1:
+        return "high"
+        
+    # Count medium risks
+    medium_risks = sum(1 for risk in risks if risk.get('level') == 'medium')
+    medium_risk_reqs = sum(1 for req in requirements if req.get('risk') == 'medium' and req.get('status') != 'met')
+    
+    # If we have multiple medium risks, overall risk is medium
+    if medium_risks > 1 or medium_risk_reqs > 2:
+        return "medium"
+        
+    # Default to low risk
+    return "low"
+
 def generate_pdf_report(report_data):
     """Generate a PDF report from compliance data."""
     jurisdiction = report_data.get('jurisdictionName', 'Unknown')
@@ -230,6 +365,11 @@ def generate_pdf_report(report_data):
     risk_level = report_data.get('riskLevel', 'Unknown')
     status = report_data.get('status', 'Unknown')
     requirements = report_data.get('requirementsList', [])
+    full_report = report_data.get('fullReport', '')
+    
+    # If we have a full report, just return that
+    if full_report:
+        return full_report
     
     # Create a text-based representation of the PDF (in a real app, use a PDF library)
     content = f"""
@@ -360,7 +500,7 @@ def get_regulatory_document(api_key, jurisdiction, doc_type, company_profile):
     }
     
     payload = {
-        "model": "llama-3.1-sonar-small-128k-online",
+        "model": "llama-3.1-sonar-large-128k-online",
         "messages": [
             {
                 "role": "system",
@@ -403,157 +543,6 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
     """
     
     return formatted_document
-
-def get_compliance_from_perplexity(api_key: str, company_profile: Dict[str, Any], jurisdiction: str) -> Dict[str, Any]:
-    """
-    Use Perplexity API to analyze compliance requirements.
-    
-    Args:
-        api_key: Perplexity API key
-        company_profile: Company profile data
-        jurisdiction: Jurisdiction to analyze
-    
-    Returns:
-        Dict containing compliance analysis
-    """
-    # Create a prompt for the Perplexity API
-    prompt = f"""
-    I need a compliance analysis for a {company_profile.get('companySize', '')} company in the {company_profile.get('industry', '')} industry 
-    operating in {jurisdiction}. The company description is: {company_profile.get('description', 'No description provided')}.
-    
-    Please provide a detailed compliance analysis with the following structure:
-    1. A list of 5-8 key compliance requirements for this company in this jurisdiction
-    2. For each requirement, provide:
-       - A unique ID (like "req1", "req2", etc.)
-       - A short title
-       - A brief description
-       - A category (e.g., Data Protection, Financial Reporting, etc.)
-       - Status: whether this type of company would typically meet this requirement ("met", "partial", or "not-met")
-       - Risk level if not met ("high", "medium", or "low")
-       - A recommendation if the requirement is not fully met
-    3. An overall compliance score (0-100)
-    4. Overall risk level (high, medium, or low)
-    5. Overall compliance status (compliant, partial, or non-compliant)
-    
-    Format your response as a JSON object with the following structure:
-    {{
-       "requirements": [
-        {{
-           "id": "req1",
-           "title": "Requirement Title",
-           "description": "Brief description of the requirement",
-           "category": "Category Name",
-           "status": "met|partial|not-met",
-           "risk": "high|medium|low",
-           "recommendation": "Recommendation if not met",
-           "isMet": true|false
-        }},
-        ...more requirements...
-       ],
-       "complianceScore": 75,
-       "riskLevel": "medium",
-       "status": "partial"
-    }}
-    
-    Respond ONLY with the JSON object, no other text.
-    """
-    
-    # Set a consistent seed value to get more consistent results
-    seed_value = hash(f"{jurisdiction}_{company_profile.get('companyName', '')}_{company_profile.get('industry', '')}") % 10000
-    
-    # Call the Perplexity API
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "llama-3.1-sonar-small-128k-online",
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are a compliance expert specializing in financial regulations. Provide only JSON responses with no additional text."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "temperature": 0.1,  # Lower temperature for more consistent results
-        "max_tokens": 2000,
-        "random_seed": seed_value  # Add seed for consistency
-    }
-    
-    response = requests.post(
-        "https://api.perplexity.ai/chat/completions", 
-        headers=headers, 
-        json=payload
-    )
-    
-    if response.status_code != 200:
-        raise Exception(f"Perplexity API error: {response.text}")
-    
-    result = response.json()
-    
-    # Extract the JSON part from the response
-    response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "{}")
-    
-    # Clean up the response to handle potential formatting issues
-    response_text = response_text.strip()
-    
-    # If the response starts with a code block, remove it
-    if response_text.startswith("```json"):
-        response_text = response_text[7:]
-    if response_text.endswith("```"):
-        response_text = response_text[:-3]
-    
-    response_text = response_text.strip()
-    
-    # Parse the JSON response
-    try:
-        return json.loads(response_text)
-    except json.JSONDecodeError:
-        raise Exception("Failed to parse Perplexity response as JSON")
-
-def format_compliance_response(compliance_data: Dict[str, Any], jurisdiction: str) -> Dict[str, Any]:
-    """
-    Format the compliance data into the expected response format.
-    
-    Args:
-        compliance_data: Raw compliance data from Perplexity
-        jurisdiction: Jurisdiction ID
-    
-    Returns:
-        Formatted compliance response
-    """
-    # Add missing ID fields to requirements if needed
-    requirements_list = compliance_data.get("requirements", [])
-    for i, req in enumerate(requirements_list):
-        if "id" not in req:
-            req["id"] = f"req{i+1}"
-    
-    # Count the number of met requirements
-    met_count = sum(1 for req in requirements_list if req.get("isMet", False))
-    total_count = len(requirements_list)
-    
-    # Get jurisdiction name
-    jurisdiction_name = get_jurisdiction_name(jurisdiction)
-    
-    # Format the response
-    return {
-        "jurisdictionId": jurisdiction,
-        "jurisdictionName": jurisdiction_name,
-        "flag": get_jurisdiction_flag(jurisdiction),
-        "complianceScore": compliance_data.get("complianceScore", 0),
-        "status": compliance_data.get("status", "non-compliant"),
-        "riskLevel": compliance_data.get("riskLevel", "high"),
-        "requirements": {
-            "total": total_count,
-            "met": met_count
-        },
-        "requirementsList": requirements_list,
-        "recentChanges": 0  # Default to 0
-    }
 
 def get_jurisdiction_name(jurisdiction_id: str) -> str:
     """Get the name of a jurisdiction from its ID."""
