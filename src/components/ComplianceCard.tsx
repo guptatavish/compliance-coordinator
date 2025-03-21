@@ -87,6 +87,20 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
   };
 
   const statusColor = getStatusColor(status);
+  
+  // Helper to get the correct indicator class based on status
+  const getIndicatorClass = (status: ComplianceStatus) => {
+    switch (status) {
+      case 'compliant':
+        return 'bg-success-500';
+      case 'partial':
+        return 'bg-warning-500';
+      case 'non-compliant':
+        return 'bg-danger-500';
+      default:
+        return 'bg-primary';
+    }
+  };
 
   return (
     <Card 
@@ -122,7 +136,7 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
             <Progress 
               value={complianceScore} 
               className="h-2 bg-muted" 
-              indicatorClassName={`bg-${statusColor}-500`}
+              indicatorClassName={getIndicatorClass(status)}
             />
           </div>
           
