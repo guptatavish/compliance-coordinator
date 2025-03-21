@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { ArrowRight, CheckCircle, AlertTriangle, AlertCircle } from 'lucide-react';
+import { ArrowRight, CheckCircle, AlertTriangle, AlertCircle, AlertOctagon } from 'lucide-react';
 
 export type ComplianceLevel = 'high' | 'medium' | 'low';
 export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
@@ -21,6 +21,7 @@ interface ComplianceCardProps {
     met: number;
   };
   recentChanges?: number;
+  error?: string;
   onClick?: () => void;
 }
 
@@ -33,6 +34,7 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
   riskLevel,
   requirements,
   recentChanges,
+  error,
   onClick,
 }) => {
   const getStatusColor = (status: ComplianceStatus) => {
@@ -102,12 +104,49 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
     }
   };
 
+  // If there's an error, display error state
+  if (error) {
+    return (
+      <Card 
+        className="overflow-hidden transition-all hover:border-primary/50 hover:shadow-md cursor-pointer bg-muted/30"
+        onClick={onClick}
+      >
+        <div className="h-1.5 bg-danger-500 w-full" />
+        <CardHeader className="pb-2">
+          <div className="flex justify-between items-start">
+            <div className="flex items-center space-x-2">
+              <span className="text-2xl">{flag}</span>
+              <CardTitle className="text-lg">{jurisdictionName}</CardTitle>
+            </div>
+          </div>
+          <CardDescription>Compliance status unavailable</CardDescription>
+        </CardHeader>
+        <CardContent className="pb-2">
+          <div className="flex items-center justify-center py-6 text-center">
+            <div className="space-y-2">
+              <AlertOctagon className="h-10 w-10 text-danger-500 mx-auto" />
+              <p className="text-sm text-muted-foreground">
+                {error || "Unable to analyze compliance. Try again later."}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+        <CardFooter>
+          <Button variant="ghost" size="sm" className="w-full justify-between">
+            <span>Retry</span>
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        </CardFooter>
+      </Card>
+    );
+  }
+
   return (
     <Card 
       className="overflow-hidden transition-all hover:border-primary/50 hover:shadow-md cursor-pointer"
       onClick={onClick}
     >
-      <div className={`h-1.5 bg-${statusColor}-500 w-full`} />
+      <div className={`h-1.5 ${getIndicatorClass(status)} w-full`} />
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
           <div className="flex items-center space-x-2">
