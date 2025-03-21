@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,6 +17,9 @@ const Navbar: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user, isAuthenticated, logout } = useAuth();
   const location = useLocation();
+  
+  // Extract user's name from metadata
+  const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
   
   // Track scroll position
   useEffect(() => {
@@ -94,14 +96,14 @@ const Navbar: React.FC = () => {
                     className="relative h-9 w-9 rounded-full"
                   >
                     <div className="flex items-center justify-center w-full h-full bg-primary/10 text-primary rounded-full">
-                      {user?.name?.charAt(0).toUpperCase() || <User className="h-4 w-4" />}
+                      {userName.charAt(0).toUpperCase() || <User className="h-4 w-4" />}
                     </div>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel>
                     <div className="font-normal">
-                      <p className="text-sm font-medium leading-none">{user?.name}</p>
+                      <p className="text-sm font-medium leading-none">{userName}</p>
                       <p className="text-xs text-muted-foreground mt-1">{user?.email}</p>
                     </div>
                   </DropdownMenuLabel>
@@ -169,11 +171,11 @@ const Navbar: React.FC = () => {
                   <div className="py-3 px-3 flex items-center space-x-3">
                     <div className="flex-shrink-0">
                       <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary/10 text-primary">
-                        {user?.name?.charAt(0).toUpperCase() || <User className="h-4 w-4" />}
+                        {userName.charAt(0).toUpperCase() || <User className="h-4 w-4" />}
                       </div>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{user?.name}</p>
+                      <p className="text-sm font-medium">{userName}</p>
                       <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
                     </div>
                   </div>

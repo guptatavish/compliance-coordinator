@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -13,6 +12,9 @@ import { AlertTriangle, CheckCircle, FileText, Bell, Calendar, Download } from '
 const Dashboard: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  // Extract user's name from metadata
+  const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
 
   // Check if company profile exists
   const hasCompanyProfile = !!localStorage.getItem('companyProfile');
@@ -359,7 +361,7 @@ const Dashboard: React.FC = () => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">
-            Welcome back, {user?.name || 'User'}. Here's your compliance overview.
+            Welcome back, {userName}. Here's your compliance overview.
           </p>
         </div>
         

@@ -12,7 +12,7 @@ export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
 interface ComplianceCardProps {
   jurisdictionId: string;
   jurisdictionName: string;
-  flag: string;
+  flag?: string; // Made optional to fix the type error
   complianceScore: number;
   status: ComplianceStatus;
   riskLevel: ComplianceLevel;
