@@ -18,16 +18,22 @@ To run:
 2. Run the server: python app.py
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import requests
 import json
 import os
 import uuid
+import time
 from typing import Dict, List, Any, Optional
+from datetime import datetime
+import io
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
+
+# Store analysis results in memory (in a real app, this would be in a database)
+stored_analysis_results = {}
 
 # Routes
 @app.route('/health', methods=['GET'])
@@ -57,18 +63,107 @@ def analyze_compliance():
         
         if not api_key or not company_profile or not jurisdiction:
             return jsonify({"error": "Missing required fields"}), 400
-            
+        
+        # Generate a cache key for this analysis request
+        cache_key = f"{jurisdiction}_{company_profile.get('companyName', '')}_{company_profile.get('industry', '')}"
+        
+        # Check if we have a recent cached result (less than 1 hour old)
+        current_time = time.time()
+        if cache_key in stored_analysis_results and (current_time - stored_analysis_results[cache_key]['timestamp'] < 3600):
+            print(f"Using cached result for {cache_key}")
+            return jsonify(stored_analysis_results[cache_key]['data']), 200
+        
         # Get compliance analysis from Perplexity API
         compliance_data = get_compliance_from_perplexity(api_key, company_profile, jurisdiction)
         
         # Process and format the response
         formatted_response = format_compliance_response(compliance_data, jurisdiction)
         
+        # Store the result in our cache
+        stored_analysis_results[cache_key] = {
+            'timestamp': current_time,
+            'data': formatted_response
+        }
+        
         return jsonify(formatted_response), 200
         
     except Exception as e:
         print(f"Error processing request: {str(e)}")
         return jsonify({"error": f"Failed to process request: {str(e)}"}), 500
+
+@app.route('/export-report/<format>', methods=['POST'])
+def export_report(format):
+    """
+    Export a compliance report in the specified format.
+    
+    Expects a JSON payload with:
+    - data: The compliance data to include in the report
+    
+    Parameters:
+    - format: 'pdf', 'excel' or 'csv'
+    """
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        report_data = data.get('data')
+        if not report_data:
+            return jsonify({"error": "No report data provided"}), 400
+        
+        # In a real implementation, you would generate the actual file here
+        # For this example, we'll return a placeholder file
+        
+        if format == 'pdf':
+            # Create a simple placeholder PDF report
+            # In a real implementation, you'd use a PDF generation library
+            report_content = f"ComplianceSync Report\n\nJurisdiction: {report_data.get('jurisdictionName', 'Unknown')}\nDate: {datetime.now().strftime('%Y-%m-%d')}\nCompliance Score: {report_data.get('complianceScore', '0')}%"
+            
+            # Convert text to bytes for serving as a file
+            bytes_io = io.BytesIO(report_content.encode('utf-8'))
+            
+            return send_file(
+                bytes_io,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f"compliance_report_{datetime.now().strftime('%Y%m%d')}.pdf"
+            )
+            
+        elif format == 'excel':
+            # In a real implementation, you'd use an Excel generation library
+            report_content = f"ComplianceSync Report\n\nJurisdiction: {report_data.get('jurisdictionName', 'Unknown')}\nDate: {datetime.now().strftime('%Y-%m-%d')}\nCompliance Score: {report_data.get('complianceScore', '0')}%"
+            
+            # Convert text to bytes for serving as a file
+            bytes_io = io.BytesIO(report_content.encode('utf-8'))
+            
+            return send_file(
+                bytes_io,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=f"compliance_report_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            )
+            
+        elif format == 'csv':
+            # In a real implementation, you'd use a CSV generation library
+            report_content = f"Jurisdiction,Date,Compliance Score\n{report_data.get('jurisdictionName', 'Unknown')},{datetime.now().strftime('%Y-%m-%d')},{report_data.get('complianceScore', '0')}%"
+            
+            # Convert text to bytes for serving as a file
+            bytes_io = io.BytesIO(report_content.encode('utf-8'))
+            
+            return send_file(
+                bytes_io,
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=f"compliance_report_{datetime.now().strftime('%Y%m%d')}.csv"
+            )
+            
+        else:
+            return jsonify({"error": "Unsupported format"}), 400
+            
+    except Exception as e:
+        print(f"Error exporting report: {str(e)}")
+        return jsonify({"error": f"Failed to export report: {str(e)}"}), 500
 
 def get_compliance_from_perplexity(api_key: str, company_profile: Dict[str, Any], jurisdiction: str) -> Dict[str, Any]:
     """
@@ -103,26 +198,29 @@ def get_compliance_from_perplexity(api_key: str, company_profile: Dict[str, Any]
     
     Format your response as a JSON object with the following structure:
     {{
-      "requirements": [
+       "requirements": [
         {{
-          "id": "req1",
-          "title": "Requirement Title",
-          "description": "Brief description of the requirement",
-          "category": "Category Name",
-          "status": "met|partial|not-met",
-          "risk": "high|medium|low",
-          "recommendation": "Recommendation if not met",
-          "isMet": true|false
+           "id": "req1",
+           "title": "Requirement Title",
+           "description": "Brief description of the requirement",
+           "category": "Category Name",
+           "status": "met|partial|not-met",
+           "risk": "high|medium|low",
+           "recommendation": "Recommendation if not met",
+           "isMet": true|false
         }},
         ...more requirements...
-      ],
-      "complianceScore": 75,
-      "riskLevel": "medium",
-      "status": "partial"
+       ],
+       "complianceScore": 75,
+       "riskLevel": "medium",
+       "status": "partial"
     }}
     
     Respond ONLY with the JSON object, no other text.
     """
+    
+    # Set a consistent seed value to get more consistent results
+    seed_value = hash(f"{jurisdiction}_{company_profile.get('companyName', '')}_{company_profile.get('industry', '')}") % 10000
     
     # Call the Perplexity API
     headers = {
@@ -142,8 +240,9 @@ def get_compliance_from_perplexity(api_key: str, company_profile: Dict[str, Any]
                 "content": prompt
             }
         ],
-        "temperature": 0.2,
-        "max_tokens": 2000
+        "temperature": 0.1,  # Lower temperature for more consistent results
+        "max_tokens": 2000,
+        "random_seed": seed_value  # Add seed for consistency
     }
     
     response = requests.post(

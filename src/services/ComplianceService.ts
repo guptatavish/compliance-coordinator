@@ -11,7 +11,6 @@ export interface Requirement {
   title: string;
   description: string;
   isMet: boolean;
-  // Add the missing properties used in ComplianceAnalysis.tsx
   status: RequirementStatus;
   category: string;
   risk: RiskLevel;
@@ -42,6 +41,8 @@ export interface CompanyProfile {
   currentJurisdictions: string[];
   targetJurisdictions: string[];
 }
+
+export type ReportFormat = 'pdf' | 'excel' | 'csv';
 
 /**
  * Checks if the Python backend is running
@@ -123,6 +124,46 @@ export const analyzeComplianceWithPython = async (
       requirementsList: [],
       error: error instanceof Error ? error.message : 'Unknown error'
     };
+  }
+};
+
+/**
+ * Export a compliance report in the specified format
+ */
+export const exportComplianceReport = async (
+  data: ComplianceResult,
+  format: ReportFormat
+): Promise<Blob> => {
+  try {
+    // First check if the Python backend is running
+    const isBackendHealthy = await checkPythonBackendHealth();
+    if (!isBackendHealthy) {
+      throw new Error('Python backend is not running or not accessible');
+    }
+    
+    console.log(`Sending request to Python backend at ${PYTHON_API_URL}/export-report/${format}`);
+    
+    const response = await fetch(`${PYTHON_API_URL}/export-report/${format}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        data
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Export failed: ${response.status} - ${errorText}`);
+    }
+    
+    // Get the file blob
+    const blob = await response.blob();
+    return blob;
+  } catch (error) {
+    console.error('Error exporting report:', error);
+    throw error;
   }
 };
 

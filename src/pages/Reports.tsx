@@ -17,7 +17,9 @@ import {
   ChevronRight,
   FileBarChart,
   FileSpreadsheet,
-  ExternalLink
+  ExternalLink,
+  Eye,
+  Loader2 
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { jurisdictions } from '../components/JurisdictionSelect';
@@ -44,6 +46,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/use-toast";
+import { exportComplianceReport, checkPythonBackendHealth, ComplianceResult } from '../services/ComplianceService';
 
 interface ReportTemplate {
   id: string;
@@ -62,19 +74,31 @@ interface GeneratedReport {
   format: 'pdf' | 'excel' | 'csv';
   status: 'ready' | 'processing';
   template: string;
+  data?: ComplianceResult;
 }
 
 const Reports: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'templates' | 'history'>('templates');
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [pythonBackendAvailable, setPythonBackendAvailable] = useState<boolean | null>(null);
+  const [selectedReport, setSelectedReport] = useState<GeneratedReport | null>(null);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
   
   // Check if there's a stored profile
   const hasCompanyProfile = !!localStorage.getItem('companyProfile');
   const companyProfileData = hasCompanyProfile 
     ? JSON.parse(localStorage.getItem('companyProfile')!) 
     : null;
+  
+  // Check for stored compliance analysis results
+  const storedAnalysisResults = localStorage.getItem('complianceAnalysisResults');
+  const analysisResults = storedAnalysisResults 
+    ? JSON.parse(storedAnalysisResults) as ComplianceResult[]
+    : [];
   
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -89,6 +113,16 @@ const Reports: React.FC = () => {
       navigate('/company-profile');
     }
   }, [isAuthenticated, hasCompanyProfile, navigate]);
+
+  // Check if Python backend is available
+  useEffect(() => {
+    const checkBackendHealth = async () => {
+      const isHealthy = await checkPythonBackendHealth();
+      setPythonBackendAvailable(isHealthy);
+    };
+    
+    checkBackendHealth();
+  }, []);
 
   // Sample report templates
   const reportTemplates: ReportTemplate[] = [
@@ -134,36 +168,68 @@ const Reports: React.FC = () => {
     },
   ];
 
-  // Sample generated reports history
-  const [reportsHistory, setReportsHistory] = useState<GeneratedReport[]>([
-    {
-      id: 'report-1',
-      name: 'Q3 Compliance Report',
-      date: '2023-09-15',
-      jurisdictions: companyProfileData?.currentJurisdictions?.slice(0, 2) || [],
+  // Generated reports history - initialize with stored analysis results if available
+  const [reportsHistory, setReportsHistory] = useState<GeneratedReport[]>(() => {
+    // Create initial reports from any stored analysis results
+    const initialReports: GeneratedReport[] = analysisResults.map((result, index) => ({
+      id: `report-analysis-${index}`,
+      name: `${result.jurisdictionName} Compliance Report`,
+      date: new Date().toISOString().split('T')[0],
+      jurisdictions: [result.jurisdictionId],
       format: 'pdf',
       status: 'ready',
       template: 'Comprehensive Compliance Report',
-    },
-    {
-      id: 'report-2',
-      name: 'Compliance Gap Analysis - August',
-      date: '2023-08-22',
-      jurisdictions: companyProfileData?.currentJurisdictions?.slice(0, 3) || [],
-      format: 'excel',
-      status: 'ready',
-      template: 'Compliance Gap Analysis',
-    },
-  ]);
+      data: result
+    }));
+    
+    // Add some sample reports if needed
+    if (initialReports.length === 0) {
+      initialReports.push(
+        {
+          id: 'report-1',
+          name: 'Q3 Compliance Report',
+          date: '2023-09-15',
+          jurisdictions: companyProfileData?.currentJurisdictions?.slice(0, 2) || [],
+          format: 'pdf',
+          status: 'ready',
+          template: 'Comprehensive Compliance Report',
+        },
+        {
+          id: 'report-2',
+          name: 'Compliance Gap Analysis - August',
+          date: '2023-08-22',
+          jurisdictions: companyProfileData?.currentJurisdictions?.slice(0, 3) || [],
+          format: 'excel',
+          status: 'ready',
+          template: 'Compliance Gap Analysis',
+        }
+      );
+    }
+    
+    return initialReports;
+  });
 
   const handleGenerateReport = (templateId: string) => {
+    if (!pythonBackendAvailable) {
+      toast({
+        title: "Python Backend Not Available",
+        description: "The Python backend is not running. Please start the Python backend and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsGenerating(templateId);
     
-    // Simulate report generation
+    // Simulate report generation (in a real app, this would call the backend)
     setTimeout(() => {
       const template = reportTemplates.find(t => t.id === templateId);
       
       if (template) {
+        // Use actual analysis results if available
+        const matchingAnalysis = analysisResults.length > 0 ? 
+          analysisResults[Math.floor(Math.random() * analysisResults.length)] : null;
+        
         const newReport: GeneratedReport = {
           id: `report-${Date.now()}`,
           name: template.name,
@@ -172,14 +238,78 @@ const Reports: React.FC = () => {
           format: template.format,
           status: 'ready',
           template: template.name,
+          data: matchingAnalysis || undefined
         };
         
         setReportsHistory([newReport, ...reportsHistory]);
         setActiveTab('history');
+        
+        toast({
+          title: "Report Generated",
+          description: "Your report has been generated successfully.",
+        });
       }
       
       setIsGenerating(null);
     }, 2000);
+  };
+
+  const handleExportReport = async (report: GeneratedReport) => {
+    if (!pythonBackendAvailable) {
+      toast({
+        title: "Python Backend Not Available",
+        description: "The Python backend is not running. Please start the Python backend and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!report.data) {
+      toast({
+        title: "No Data Available",
+        description: "This report does not have associated compliance data.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsExporting(true);
+    
+    try {
+      // Export the report using the backend service
+      const blob = await exportComplianceReport(report.data, report.format);
+      
+      // Create a download link
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${report.name.replace(/\s+/g, '_')}_${report.date}.${report.format}`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Report Downloaded",
+        description: `Your ${report.format.toUpperCase()} report has been downloaded.`,
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+      toast({
+        title: "Export Failed",
+        description: error instanceof Error ? error.message : "Failed to export report",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleViewReport = (report: GeneratedReport) => {
+    setSelectedReport(report);
+    setIsViewerOpen(true);
   };
 
   const getFormatIcon = (format: 'pdf' | 'excel' | 'csv') => {
@@ -231,6 +361,25 @@ const Reports: React.FC = () => {
             </div>
           </div>
         </div>
+        
+        {!pythonBackendAvailable && (
+          <Card className="mb-6 border-warning-500/50 bg-warning-50/50">
+            <CardContent className="pt-6">
+              <div className="flex gap-4 items-start">
+                <div className="p-2 rounded-full bg-warning-100 text-warning-500">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium mb-1 text-warning-700">Python Backend Not Available</h3>
+                  <p className="text-warning-600">
+                    The Python backend is not running. Report generation and export functionality will be limited.
+                    Please start the Python backend to enable full functionality.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         
         {activeTab === 'templates' ? (
           <div className="space-y-6">
@@ -397,10 +546,29 @@ const Reports: React.FC = () => {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">
-                            <Download className="h-4 w-4 mr-1" />
-                            Download
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleViewReport(report)}
+                            >
+                              <Eye className="h-4 w-4 mr-1" />
+                              View
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleExportReport(report)}
+                              disabled={isExporting || !report.data}
+                            >
+                              {isExporting ? (
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              ) : (
+                                <Download className="h-4 w-4 mr-1" />
+                              )}
+                              Download
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -434,6 +602,142 @@ const Reports: React.FC = () => {
           </div>
         )}
       </div>
+      
+      {/* Report Viewer Dialog */}
+      <Dialog open={isViewerOpen} onOpenChange={setIsViewerOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedReport?.name}</DialogTitle>
+            <DialogDescription>
+              Generated on {selectedReport?.date} • {selectedReport?.format.toUpperCase()} Report
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedReport?.data ? (
+            <div className="space-y-6 py-4">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-4 bg-muted/20 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="text-2xl">{selectedReport.data.flag}</div>
+                  <div>
+                    <h3 className="font-semibold">{selectedReport.data.jurisdictionName}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedReport.data.requirements.met} of {selectedReport.data.requirements.total} requirements met
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <div className="text-center px-4 py-2 bg-muted rounded-md">
+                    <div className="text-2xl font-bold">{selectedReport.data.complianceScore}%</div>
+                    <div className="text-xs text-muted-foreground">Compliance Score</div>
+                  </div>
+                  
+                  <div className={`text-center px-4 py-2 rounded-md ${
+                    selectedReport.data.riskLevel === 'low' 
+                      ? 'bg-success-50 text-success-700' 
+                      : selectedReport.data.riskLevel === 'medium' 
+                      ? 'bg-warning-50 text-warning-700'
+                      : 'bg-danger-50 text-danger-700'
+                  }`}>
+                    <div className="text-2xl font-bold capitalize">{selectedReport.data.riskLevel}</div>
+                    <div className="text-xs">Risk Level</div>
+                  </div>
+                </div>
+              </div>
+              
+              {selectedReport.data.requirementsList.length > 0 ? (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Requirements</h3>
+                  {selectedReport.data.requirementsList.map((req) => (
+                    <div 
+                      key={req.id} 
+                      className={`p-4 rounded-lg border ${
+                        req.status === 'met'
+                          ? 'border-success-100 bg-success-50/30'
+                          : req.status === 'partial'
+                          ? 'border-warning-100 bg-warning-50/30'
+                          : 'border-danger-100 bg-danger-50/30'
+                      }`}
+                    >
+                      <div className="flex flex-col md:flex-row md:items-start gap-3">
+                        <div className={`p-2 rounded-full ${
+                          req.status === 'met'
+                            ? 'bg-success-100 text-success-500'
+                            : req.status === 'partial'
+                            ? 'bg-warning-100 text-warning-500'
+                            : 'bg-danger-100 text-danger-500'
+                        }`}>
+                          {req.status === 'met' ? (
+                            <CheckCircle className="h-4 w-4" />
+                          ) : req.status === 'partial' ? (
+                            <Clock className="h-4 w-4" />
+                          ) : (
+                            <FileText className="h-4 w-4" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-2">
+                            <h4 className="font-medium">{req.title}</h4>
+                            <span className="text-xs px-2 py-1 rounded-full bg-muted whitespace-nowrap">
+                              {req.category}
+                            </span>
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-2">
+                            {req.description}
+                          </p>
+                          {req.recommendation && (
+                            <div className="mt-2 p-2 bg-muted/30 rounded text-sm">
+                              <span className="font-medium">Recommendation: </span>
+                              {req.recommendation}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-8 text-center">
+                  <p className="text-muted-foreground">No detailed requirements information available.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="py-12 text-center">
+              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-xl font-medium mb-2">No Report Data Available</h3>
+              <p className="text-muted-foreground mb-4">
+                This report does not have associated compliance data.
+              </p>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsViewerOpen(false)}
+            >
+              Close
+            </Button>
+            {selectedReport?.data && (
+              <Button 
+                onClick={() => {
+                  setIsViewerOpen(false);
+                  if (selectedReport) handleExportReport(selectedReport);
+                }}
+                disabled={isExporting}
+              >
+                {isExporting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Download
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };
