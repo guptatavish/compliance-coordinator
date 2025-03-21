@@ -68,6 +68,11 @@ export const analyzeComplianceWithPython = async (
   jurisdiction: string
 ): Promise<ComplianceResult> => {
   try {
+    // Validate jurisdiction input
+    if (!jurisdiction) {
+      throw new Error('Invalid jurisdiction: jurisdiction cannot be null or empty');
+    }
+    
     // Get company profile from localStorage
     const companyProfileStr = localStorage.getItem('companyProfile');
     if (!companyProfileStr) {
@@ -109,6 +114,18 @@ export const analyzeComplianceWithPython = async (
     
     const result = await response.json();
     console.log('Received compliance data from Python backend:', result);
+    
+    // Validate the result structure
+    if (!result || typeof result !== 'object' || !result.jurisdictionId) {
+      console.error('Invalid response format from Python backend:', result);
+      throw new Error('Invalid response format from Python backend');
+    }
+    
+    // Ensure requirementsList is always an array
+    if (!result.requirementsList) {
+      result.requirementsList = [];
+    }
+    
     return result;
   } catch (error) {
     console.error('Error analyzing compliance:', error);

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -112,7 +111,6 @@ const ComplianceAnalysis: React.FC = () => {
       
       const analysisResults: JurisdictionData[] = [];
       
-      // Filter out null or undefined jurisdictions
       const validJurisdictions = companyProfileData.currentJurisdictions.filter(j => j);
       
       if (validJurisdictions.length === 0) {
@@ -131,61 +129,79 @@ const ComplianceAnalysis: React.FC = () => {
         try {
           const result = await analyzeComplianceWithPython(jurisdictionId);
           
-          const matchingJurisdiction = jurisdictions.find(j => j.id === result.jurisdictionId);
-          const enrichedResult = {
-            ...result,
-            flag: matchingJurisdiction?.flag || '🏳️'
-          };
-          
-          analysisResults.push(enrichedResult);
-          
-          if (companyId) {
-            try {
-              const { data: analysisData, error: analysisError } = await supabase
-                .from('compliance_analysis')
-                .insert([{
-                  company_profile_id: companyId,
-                  jurisdiction_id: result.jurisdictionId,
-                  jurisdiction_name: result.jurisdictionName,
-                  compliance_score: result.complianceScore,
-                  status: result.status,
-                  risk_level: result.riskLevel
-                }])
-                .select('id')
-                .maybeSingle();
-              
-              if (analysisError) {
-                console.error("Error saving analysis:", analysisError);
-                continue;
-              }
-              
-              if (analysisData) {
-                const analysisId = analysisData.id;
+          if (result && result.jurisdictionId) {
+            const matchingJurisdiction = jurisdictions.find(j => j.id === result.jurisdictionId);
+            const enrichedResult = {
+              ...result,
+              flag: matchingJurisdiction?.flag || '🏳️'
+            };
+            
+            analysisResults.push(enrichedResult);
+            
+            if (companyId) {
+              try {
+                const { data: analysisData, error: analysisError } = await supabase
+                  .from('compliance_analysis')
+                  .insert([{
+                    company_profile_id: companyId,
+                    jurisdiction_id: result.jurisdictionId,
+                    jurisdiction_name: result.jurisdictionName,
+                    compliance_score: result.complianceScore,
+                    status: result.status,
+                    risk_level: result.riskLevel
+                  }])
+                  .select('id')
+                  .maybeSingle();
                 
-                const requirementsToInsert = result.requirementsList.map(req => ({
-                  analysis_id: analysisId,
-                  title: req.title,
-                  description: req.description,
-                  category: req.category,
-                  status: req.status,
-                  risk: req.risk,
-                  recommendation: req.recommendation || null,
-                  is_met: req.isMet
-                }));
+                if (analysisError) {
+                  console.error("Error saving analysis:", analysisError);
+                  continue;
+                }
                 
-                if (requirementsToInsert.length > 0) {
-                  const { error: reqError } = await supabase
-                    .from('compliance_requirements')
-                    .insert(requirementsToInsert);
+                if (analysisData && analysisData.id && result.requirementsList && result.requirementsList.length > 0) {
+                  const analysisId = analysisData.id;
                   
-                  if (reqError) {
-                    console.error("Error saving requirements:", reqError);
+                  const requirementsToInsert = result.requirementsList.map(req => ({
+                    analysis_id: analysisId,
+                    title: req.title,
+                    description: req.description,
+                    category: req.category,
+                    status: req.status,
+                    risk: req.risk,
+                    recommendation: req.recommendation || null,
+                    is_met: req.isMet
+                  }));
+                  
+                  if (requirementsToInsert.length > 0) {
+                    const { error: reqError } = await supabase
+                      .from('compliance_requirements')
+                      .insert(requirementsToInsert);
+                    
+                    if (reqError) {
+                      console.error("Error saving requirements:", reqError);
+                    }
                   }
                 }
+              } catch (err) {
+                console.error("Error saving analysis to database:", err);
               }
-            } catch (err) {
-              console.error("Error saving analysis to database:", err);
             }
+          } else {
+            console.error(`Invalid or incomplete result received for jurisdiction ${jurisdictionId}:`, result);
+            
+            analysisResults.push({
+              jurisdictionId: jurisdictionId,
+              jurisdictionName: getJurisdictionName(jurisdictionId),
+              complianceScore: 0,
+              status: 'non-compliant',
+              riskLevel: 'high',
+              requirements: {
+                total: 0,
+                met: 0,
+              },
+              requirementsList: [],
+              error: 'Invalid or incomplete analysis result'
+            });
           }
         } catch (err) {
           console.error(`Error analyzing jurisdiction ${jurisdictionId}:`, err);
@@ -207,6 +223,13 @@ const ComplianceAnalysis: React.FC = () => {
       }
       
       setJurisdictionsData(analysisResults);
+      
+      if (analysisResults.length > 0 && analysisResults[0] && analysisResults[0].jurisdictionId) {
+        setSelectedJurisdiction(analysisResults[0].jurisdictionId);
+      } else {
+        setSelectedJurisdiction(null);
+      }
+      
       setAnalysisComplete(true);
       
       toast({
@@ -321,7 +344,7 @@ const ComplianceAnalysis: React.FC = () => {
   };
 
   const selectedData = selectedJurisdiction
-    ? jurisdictionsData.find(j => j.jurisdictionId === selectedJurisdiction)
+    ? jurisdictionsData.find(j => j && j.jurisdictionId === selectedJurisdiction) || null
     : null;
 
   const getJurisdictionName = (jurisdictionId: string): string => {
@@ -330,7 +353,7 @@ const ComplianceAnalysis: React.FC = () => {
   };
 
   const getCategoryAnalysisData = () => {
-    if (!selectedData) return [];
+    if (!selectedData || !selectedData.requirementsList) return [];
     
     const categoryCounts: Record<string, Record<string, number>> = {};
     
@@ -350,7 +373,7 @@ const ComplianceAnalysis: React.FC = () => {
   };
 
   const getRiskAnalysisData = () => {
-    if (!selectedData) return [];
+    if (!selectedData || !selectedData.requirementsList) return [];
     
     const riskCounts = { high: 0, medium: 0, low: 0 };
     
@@ -481,18 +504,20 @@ const ComplianceAnalysis: React.FC = () => {
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {jurisdictionsData.map((jurisdiction) => (
-                  <div 
-                    key={jurisdiction.jurisdictionId}
-                    className={`transition-all duration-300 transform ${
-                      selectedJurisdiction === jurisdiction.jurisdictionId ? 'scale-[1.02] ring-2 ring-primary' : ''
-                    }`}
-                  >
-                    <ComplianceCard
-                      {...jurisdiction}
-                      onClick={() => setSelectedJurisdiction(jurisdiction.jurisdictionId)}
-                    />
-                  </div>
+                {jurisdictionsData.map((jurisdiction, index) => (
+                  jurisdiction && jurisdiction.jurisdictionId ? (
+                    <div 
+                      key={jurisdiction.jurisdictionId || `jurisdiction-${index}`}
+                      className={`transition-all duration-300 transform ${
+                        selectedJurisdiction === jurisdiction.jurisdictionId ? 'scale-[1.02] ring-2 ring-primary' : ''
+                      }`}
+                    >
+                      <ComplianceCard
+                        {...jurisdiction}
+                        onClick={() => setSelectedJurisdiction(jurisdiction.jurisdictionId)}
+                      />
+                    </div>
+                  ) : null
                 ))}
               </div>
             </div>
@@ -539,9 +564,9 @@ const ComplianceAnalysis: React.FC = () => {
                       </TabsList>
                       
                       <TabsContent value="all" className="space-y-4">
-                        {selectedData.requirementsList.map((req, index) => (
+                        {selectedData.requirementsList && selectedData.requirementsList.map((req, index) => (
                           <div 
-                            key={req.id || index} 
+                            key={req.id || `req-${index}`} 
                             className={`p-4 rounded-lg border ${
                               req.status === 'met'
                                 ? 'border-success-100 bg-success-50/30'
@@ -589,7 +614,7 @@ const ComplianceAnalysis: React.FC = () => {
                       </TabsContent>
                       
                       <TabsContent value="issues" className="space-y-4">
-                        {selectedData.requirementsList
+                        {selectedData.requirementsList && selectedData.requirementsList
                           .filter(req => req.status !== 'met')
                           .map((req, index) => (
                             <div 
@@ -635,7 +660,7 @@ const ComplianceAnalysis: React.FC = () => {
                       </TabsContent>
                       
                       <TabsContent value="met" className="space-y-4">
-                        {selectedData.requirementsList
+                        {selectedData.requirementsList && selectedData.requirementsList
                           .filter(req => req.status === 'met')
                           .map((req, index) => (
                             <div 
