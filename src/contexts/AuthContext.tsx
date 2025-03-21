@@ -1,23 +1,20 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { User, Session } from '@supabase/supabase-js';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 type UserRole = 'compliance_officer' | 'finance_manager' | 'executive' | null;
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  company?: string;
-}
-
 interface AuthContextType {
   user: User | null;
+  session: Session | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string, role: UserRole) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string, role: UserRole) => Promise<void>;
-  logout: () => void;
+  signInWithGoogle: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,39 +29,47 @@ export const useAuth = () => {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
-  // Check if user is already logged in on component mount
+  // Set up auth state listener and check for existing session
   useEffect(() => {
-    const storedUser = localStorage.getItem('complianceSync_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setIsLoading(false);
+    // Set up auth state listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, newSession) => {
+        setSession(newSession);
+        setUser(newSession?.user ?? null);
+        setIsLoading(false);
+      }
+    );
+
+    // THEN check for existing session
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  // In a real app, this would communicate with a backend
-  const login = async (email: string, password: string, role: UserRole) => {
+  const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Create mock user for demo
-      const newUser = {
-        id: `user-${Date.now()}`,
-        name: email.split('@')[0],
+      const { error } = await supabase.auth.signInWithPassword({
         email,
-        role,
-        company: 'Demo Company'
-      };
+        password
+      });
       
-      // Save to localStorage for persistence
-      localStorage.setItem('complianceSync_user', JSON.stringify(newUser));
-      setUser(newUser);
-    } catch (error) {
-      console.error('Login failed:', error);
-      throw new Error('Invalid credentials');
+      if (error) throw error;
+    } catch (error: any) {
+      toast({
+        title: "Login failed",
+        description: error.message || "An unexpected error occurred",
+        variant: "destructive",
+      });
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -73,41 +78,84 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signup = async (name: string, email: string, password: string, role: UserRole) => {
     setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Create new user
-      const newUser = {
-        id: `user-${Date.now()}`,
-        name,
+      const { error } = await supabase.auth.signUp({
         email,
-        role,
-      };
+        password,
+        options: {
+          data: {
+            name,
+            role
+          }
+        }
+      });
       
-      // Save to localStorage for persistence
-      localStorage.setItem('complianceSync_user', JSON.stringify(newUser));
-      setUser(newUser);
-    } catch (error) {
-      console.error('Signup failed:', error);
-      throw new Error('Unable to create account');
+      if (error) throw error;
+
+      toast({
+        title: "Account created",
+        description: "Please check your email to confirm your account",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Signup failed",
+        description: error.message || "An unexpected error occurred",
+        variant: "destructive",
+      });
+      throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('complianceSync_user');
-    setUser(null);
+  const signInWithGoogle = async () => {
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin + '/dashboard'
+        }
+      });
+      
+      if (error) throw error;
+    } catch (error: any) {
+      toast({
+        title: "Google login failed",
+        description: error.message || "An unexpected error occurred",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } catch (error: any) {
+      toast({
+        title: "Logout failed",
+        description: error.message || "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        session,
         isAuthenticated: !!user,
         isLoading,
         login,
         signup,
+        signInWithGoogle,
         logout
       }}
     >
