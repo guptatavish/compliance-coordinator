@@ -1,4 +1,6 @@
 import { getPerplexityApiKey, PYTHON_API_URL } from "../utils/apiKeys";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
 export type ComplianceLevel = 'high' | 'medium' | 'low';
@@ -61,6 +63,54 @@ export const checkPythonBackendHealth = async (): Promise<boolean> => {
 };
 
 /**
+ * Get company profile from Supabase
+ */
+export const getCompanyProfile = async (): Promise<CompanyProfile | null> => {
+  try {
+    // First try to get from Supabase
+    const { data, error } = await supabase
+      .from('company_profiles')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    
+    if (error) {
+      console.error('Error fetching company profile from Supabase:', error);
+      // Fall back to localStorage temporarily until migration is complete
+      const profileStr = localStorage.getItem('companyProfile');
+      if (profileStr) {
+        return JSON.parse(profileStr) as CompanyProfile;
+      }
+      return null;
+    }
+    
+    if (data) {
+      // Convert from DB schema to application schema
+      return {
+        companyName: data.company_name,
+        companySize: data.company_size,
+        industry: data.industry,
+        description: data.description || '',
+        currentJurisdictions: data.current_jurisdictions || [],
+        targetJurisdictions: data.target_jurisdictions || []
+      };
+    }
+    
+    // Fall back to localStorage temporarily until migration is complete
+    const profileStr = localStorage.getItem('companyProfile');
+    if (profileStr) {
+      return JSON.parse(profileStr) as CompanyProfile;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error getting company profile:', error);
+    return null;
+  }
+};
+
+/**
  * Analyzes company compliance based on company profile and jurisdiction
  */
 export const analyzeComplianceWithPython = async (
@@ -72,13 +122,12 @@ export const analyzeComplianceWithPython = async (
       throw new Error('Invalid jurisdiction: jurisdiction cannot be null or empty');
     }
     
-    // Get company profile from localStorage
-    const companyProfileStr = localStorage.getItem('companyProfile');
-    if (!companyProfileStr) {
+    // Get company profile from Supabase
+    const companyProfile = await getCompanyProfile();
+    if (!companyProfile) {
       throw new Error('Company profile not found');
     }
     
-    const companyProfile = JSON.parse(companyProfileStr) as CompanyProfile;
     const perplexityApiKey = getPerplexityApiKey();
     
     if (!perplexityApiKey) {
@@ -104,6 +153,8 @@ export const analyzeComplianceWithPython = async (
         companyProfile,
         jurisdiction
       }),
+      // Add timeout to prevent hanging requests
+      signal: AbortSignal.timeout(30000) // 30 second timeout
     });
     
     if (!response.ok) {
@@ -116,13 +167,11 @@ export const analyzeComplianceWithPython = async (
     
     // Enhanced validation of the result structure
     if (!result) {
-      console.warn('Empty response from Python backend, generating mock data');
-      return generateMockComplianceData(jurisdiction);
+      throw new Error('Empty response from Python backend');
     }
     
     if (typeof result !== 'object') {
-      console.warn(`Invalid response type: expected object, got ${typeof result}, generating mock data`);
-      return generateMockComplianceData(jurisdiction);
+      throw new Error(`Invalid response type: expected object, got ${typeof result}`);
     }
     
     // Validate and normalize essential fields
@@ -142,79 +191,67 @@ export const analyzeComplianceWithPython = async (
         : [],
     };
     
+    // Store the analysis result in Supabase
+    try {
+      // Get the company profile ID
+      const { data: profileData } = await supabase
+        .from('company_profiles')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (profileData) {
+        // Insert the analysis into the database
+        const { data: analysisData, error: analysisError } = await supabase
+          .from('compliance_analysis')
+          .insert([{
+            company_profile_id: profileData.id,
+            jurisdiction_id: normalizedResult.jurisdictionId,
+            jurisdiction_name: normalizedResult.jurisdictionName,
+            compliance_score: normalizedResult.complianceScore,
+            status: normalizedResult.status,
+            risk_level: normalizedResult.riskLevel
+          }])
+          .select();
+        
+        if (analysisError) {
+          console.error('Error storing compliance analysis:', analysisError);
+        } else if (analysisData && analysisData.length > 0) {
+          // Store the requirements
+          const analysisId = analysisData[0].id;
+          const requirementsToInsert = normalizedResult.requirementsList.map(req => ({
+            analysis_id: analysisId,
+            title: req.title,
+            description: req.description,
+            status: req.status,
+            category: req.category,
+            risk: req.risk,
+            recommendation: req.recommendation
+          }));
+          
+          const { error: reqError } = await supabase
+            .from('compliance_requirements')
+            .insert(requirementsToInsert);
+          
+          if (reqError) {
+            console.error('Error storing compliance requirements:', reqError);
+          }
+        }
+      }
+    } catch (dbError) {
+      console.error('Error storing analysis in database:', dbError);
+      // Continue without failing since this is just for persistence
+    }
+    
     return normalizedResult;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error analyzing compliance:', error);
     
-    // Instead of returning a minimal error object, generate a complete mock response
-    // This ensures the UI still works even when the backend fails
-    return generateMockComplianceData(jurisdiction);
+    // Rethrow with a clear message for the UI
+    throw new Error(`Compliance analysis failed: ${error.message || "Unknown error"}`);
   }
 };
-
-/**
- * Generates mock compliance data for demo/testing purposes
- */
-function generateMockComplianceData(jurisdiction: string): ComplianceResult {
-  const jurisdictionName = getJurisdictionName(jurisdiction);
-  const flag = getJurisdictionFlag(jurisdiction);
-  const complianceScore = Math.floor(Math.random() * 100);
-  
-  // Determine status based on the compliance score
-  let status: ComplianceStatus, riskLevel: ComplianceLevel;
-  if (complianceScore >= 80) {
-    status = 'compliant';
-    riskLevel = 'low';
-  } else if (complianceScore >= 50) {
-    status = 'partial';
-    riskLevel = 'medium';
-  } else {
-    status = 'non-compliant';
-    riskLevel = 'high';
-  }
-  
-  // Generate mock requirements
-  const totalRequirements = 10 + Math.floor(Math.random() * 15); // Between 10-25 requirements
-  const metRequirements = Math.floor(totalRequirements * (complianceScore / 100));
-  
-  const categories = [
-    'Data Protection', 'Financial Reporting', 'Security', 
-    'Privacy', 'Employment', 'Environmental', 'Taxation'
-  ];
-  
-  const requirements: Requirement[] = [];
-  for (let i = 1; i <= totalRequirements; i++) {
-    const isMet = i <= metRequirements;
-    const reqStatus: RequirementStatus = isMet ? 'met' : (Math.random() > 0.5 ? 'partial' : 'not-met');
-    const risk: RiskLevel = isMet ? 'low' : (reqStatus === 'partial' ? 'medium' : 'high');
-    const category = categories[Math.floor(Math.random() * categories.length)];
-    
-    requirements.push({
-      id: `req-${jurisdiction}-${i}`,
-      title: `${category} Requirement ${i}`,
-      description: `This is a sample ${category.toLowerCase()} requirement for ${jurisdictionName}.`,
-      isMet,
-      status: reqStatus,
-      category,
-      risk,
-      recommendation: !isMet ? `Consider implementing ${category} controls to address this requirement.` : undefined
-    });
-  }
-  
-  return {
-    jurisdictionId: jurisdiction,
-    jurisdictionName,
-    flag,
-    complianceScore,
-    status,
-    riskLevel,
-    requirements: {
-      total: totalRequirements,
-      met: metRequirements,
-    },
-    requirementsList: requirements
-  };
-}
 
 /**
  * Validates and normalizes a compliance status value
@@ -362,6 +399,8 @@ export const exportComplianceReport = async (
       body: JSON.stringify({
         data
       }),
+      // Add timeout to prevent hanging requests
+      signal: AbortSignal.timeout(30000) // 30 second timeout
     });
     
     if (!response.ok) {
@@ -371,17 +410,35 @@ export const exportComplianceReport = async (
     
     // Get the file blob
     const blob = await response.blob();
-    return blob;
-  } catch (error) {
-    console.error('Error exporting report:', error);
     
-    // Generate a simple PDF blob for demonstration when backend fails
-    const mockBlob = new Blob([`Mock ${format} report for ${data.jurisdictionName}\nGenerated at ${new Date().toISOString()}`], { 
-      type: format === 'pdf' ? 'application/pdf' : 
-            format === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 
-            'text/csv' 
-    });
-    return mockBlob;
+    // Store report reference in Supabase
+    try {
+      const { data: profileData } = await supabase
+        .from('company_profiles')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (profileData) {
+        await supabase
+          .from('compliance_reports')
+          .insert([{
+            company_profile_id: profileData.id,
+            jurisdiction_id: data.jurisdictionId,
+            report_type: format,
+            generated_at: new Date().toISOString()
+          }]);
+      }
+    } catch (dbError) {
+      console.error('Error storing report reference:', dbError);
+      // Continue without failing since this is just for record-keeping
+    }
+    
+    return blob;
+  } catch (error: any) {
+    console.error('Error exporting report:', error);
+    throw new Error(`Report export failed: ${error.message || "Unknown error"}`);
   }
 };
 
@@ -400,12 +457,11 @@ export const exportRegulatoryDocument = async (
     }
     
     // Get company profile for context
-    const companyProfileStr = localStorage.getItem('companyProfile');
-    if (!companyProfileStr) {
+    const companyProfile = await getCompanyProfile();
+    if (!companyProfile) {
       throw new Error('Company profile not found');
     }
     
-    const companyProfile = JSON.parse(companyProfileStr) as CompanyProfile;
     const perplexityApiKey = getPerplexityApiKey();
     
     if (!perplexityApiKey) {
@@ -425,6 +481,8 @@ export const exportRegulatoryDocument = async (
         docType,
         companyProfile
       }),
+      // Add timeout to prevent hanging requests
+      signal: AbortSignal.timeout(60000) // 60 second timeout for document generation
     });
     
     if (!response.ok) {
@@ -434,15 +492,35 @@ export const exportRegulatoryDocument = async (
     
     // Get the file blob
     const blob = await response.blob();
-    return blob;
-  } catch (error) {
-    console.error('Error exporting regulatory document:', error);
     
-    // Generate a simple mock document for demonstration
-    const jurisdictionName = getJurisdictionName(jurisdiction);
-    const mockContent = `Mock Regulatory Document for ${jurisdictionName}\nDocument Type: ${docType}\nGenerated at ${new Date().toISOString()}`;
-    const mockBlob = new Blob([mockContent], { type: 'application/pdf' });
-    return mockBlob;
+    // Store document reference in Supabase
+    try {
+      const { data: profileData } = await supabase
+        .from('company_profiles')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (profileData) {
+        await supabase
+          .from('regulatory_documents')
+          .insert([{
+            company_profile_id: profileData.id,
+            jurisdiction_id: jurisdiction,
+            document_type: docType,
+            generated_at: new Date().toISOString()
+          }]);
+      }
+    } catch (dbError) {
+      console.error('Error storing document reference:', dbError);
+      // Continue without failing since this is just for record-keeping
+    }
+    
+    return blob;
+  } catch (error: any) {
+    console.error('Error exporting regulatory document:', error);
+    throw new Error(`Document export failed: ${error.message || "Unknown error"}`);
   }
 };
 
@@ -477,3 +555,4 @@ function getJurisdictionFlag(jurisdictionId: string): string {
   
   return flags[jurisdictionId] || '🏳️';
 }
+

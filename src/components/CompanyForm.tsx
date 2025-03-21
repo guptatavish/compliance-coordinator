@@ -23,6 +23,7 @@ import JurisdictionSelect from './JurisdictionSelect';
 import { useToast } from '@/hooks/use-toast';
 import { Upload, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 const CompanyForm: React.FC = () => {
   const [companyName, setCompanyName] = useState('');
@@ -33,26 +34,45 @@ const CompanyForm: React.FC = () => {
   const [targetJurisdictions, setTargetJurisdictions] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [profileId, setProfileId] = useState<string | null>(null);
   
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   useEffect(() => {
-    const savedProfile = localStorage.getItem('companyProfile');
-    if (savedProfile) {
+    if (!user) return;
+    
+    const fetchCompanyProfile = async () => {
       try {
-        const profile = JSON.parse(savedProfile);
-        setCompanyName(profile.companyName || '');
-        setCompanySize(profile.companySize || '');
-        setIndustry(profile.industry || '');
-        setDescription(profile.description || '');
-        setCurrentJurisdictions(profile.currentJurisdictions || []);
-        setTargetJurisdictions(profile.targetJurisdictions || []);
+        const { data, error } = await supabase
+          .from('company_profiles')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (error) {
+          console.error('Error fetching company profile:', error);
+          return;
+        }
+        
+        if (data) {
+          setProfileId(data.id);
+          setCompanyName(data.company_name || '');
+          setCompanySize(data.company_size || '');
+          setIndustry(data.industry || '');
+          setDescription(data.description || '');
+          setCurrentJurisdictions(data.current_jurisdictions || []);
+          setTargetJurisdictions(data.target_jurisdictions || []);
+        }
       } catch (error) {
-        console.error('Error parsing saved profile:', error);
+        console.error('Error fetching company profile:', error);
       }
-    }
-  }, []);
+    };
+    
+    fetchCompanyProfile();
+  }, [user]);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -74,12 +94,42 @@ const CompanyForm: React.FC = () => {
     setFiles(files.filter((_, i) => i !== index));
   };
   
+  const uploadFilesToStorage = async (): Promise<string[]> => {
+    const fileUrls: string[] = [];
+    
+    for (const file of files) {
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
+        const filePath = `company_documents/${fileName}`;
+        
+        const { data, error } = await supabase.storage
+          .from('documents')
+          .upload(filePath, file);
+        
+        if (error) {
+          console.error('Error uploading file:', error);
+          continue;
+        }
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('documents')
+          .getPublicUrl(filePath);
+        
+        fileUrls.push(publicUrl);
+      } catch (error) {
+        console.error('Error uploading file:', error);
+      }
+    }
+    
+    return fileUrls;
+  };
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (isLoading) return;
     
-    // Basic validation
     if (!companyName || !companySize || !industry) {
       toast({
         title: "Missing information",
@@ -101,8 +151,37 @@ const CompanyForm: React.FC = () => {
     setIsLoading(true);
     
     try {
-      // Create company profile object
-      const companyProfile = {
+      const fileUrls = files.length > 0 ? await uploadFilesToStorage() : [];
+      
+      const companyProfileData = {
+        company_name: companyName,
+        company_size: companySize,
+        industry,
+        description,
+        current_jurisdictions: currentJurisdictions,
+        target_jurisdictions: targetJurisdictions,
+        document_urls: fileUrls
+      };
+      
+      console.log('Saving company profile:', companyProfileData);
+      
+      let result;
+      if (profileId) {
+        result = await supabase
+          .from('company_profiles')
+          .update(companyProfileData)
+          .eq('id', profileId);
+      } else {
+        result = await supabase
+          .from('company_profiles')
+          .insert([companyProfileData]);
+      }
+      
+      if (result.error) {
+        throw result.error;
+      }
+      
+      localStorage.setItem('companyProfile', JSON.stringify({
         companyName,
         companySize,
         industry,
@@ -110,26 +189,7 @@ const CompanyForm: React.FC = () => {
         currentJurisdictions,
         targetJurisdictions,
         files: files.map(file => file.name),
-      };
-      
-      console.log('Saving company profile:', companyProfile);
-      
-      // Store in localStorage for this demo
-      localStorage.setItem('companyProfile', JSON.stringify(companyProfile));
-      
-      // Also save to Supabase if possible
-      try {
-        await supabase.from('company_profiles').insert([{
-          company_name: companyName,
-          company_size: companySize,
-          industry,
-          description,
-          current_jurisdictions: currentJurisdictions,
-          target_jurisdictions: targetJurisdictions
-        }]);
-      } catch (dbError) {
-        console.error("Failed to save to database, but continuing with localStorage:", dbError);
-      }
+      }));
       
       toast({
         title: "Profile saved",
@@ -137,10 +197,11 @@ const CompanyForm: React.FC = () => {
       });
       
       navigate('/dashboard');
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error saving company profile:', error);
       toast({
         title: "Error",
-        description: "Failed to save company profile. Please try again.",
+        description: "Failed to save company profile: " + (error.message || "Please try again."),
         variant: "destructive",
       });
     } finally {

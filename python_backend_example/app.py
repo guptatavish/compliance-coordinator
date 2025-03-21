@@ -1,6 +1,6 @@
 
 """
-Example Python Backend for ComplianceSync
+Python Backend for ComplianceSync
 
 This file serves as a starting point for implementing the Python backend
 for the ComplianceSync application. It provides a Flask API that handles
@@ -15,7 +15,7 @@ Requirements:
 - reportlab (for PDF generation)
 
 To run:
-1. Install dependencies: pip install flask requests flask-cors reportlab
+1. Install dependencies: pip install flask requests flask-cors reportlab python-dotenv xlsxwriter
 2. Run the server: python app.py
 """
 
@@ -35,6 +35,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 import csv
 import xlsxwriter
+import traceback
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -84,6 +85,9 @@ def analyze_compliance():
         # Get compliance analysis from Perplexity API
         compliance_data = get_compliance_from_perplexity(api_key, company_profile, jurisdiction)
         
+        if not compliance_data:
+            return jsonify({"error": "Failed to get compliance data from Perplexity API"}), 500
+        
         # Process and format the response
         formatted_response = format_compliance_response(compliance_data, jurisdiction)
         
@@ -97,6 +101,7 @@ def analyze_compliance():
         
     except Exception as e:
         print(f"Error processing request: {str(e)}")
+        traceback.print_exc()  # Print the full stack trace for debugging
         return jsonify({"error": f"Failed to process request: {str(e)}"}), 500
 
 @app.route('/export-report/<format>', methods=['POST'])
@@ -170,6 +175,7 @@ def export_report(format):
             
     except Exception as e:
         print(f"Error exporting report: {str(e)}")
+        traceback.print_exc()
         return jsonify({"error": f"Failed to export report: {str(e)}"}), 500
 
 @app.route('/export-regulatory-doc', methods=['POST'])
@@ -231,10 +237,12 @@ def export_regulatory_doc():
             
     except Exception as e:
         print(f"Error exporting regulatory document: {str(e)}")
+        traceback.print_exc()
         return jsonify({"error": f"Failed to export regulatory document: {str(e)}"}), 500
 
 def generate_pdf_report(report_data):
     """Generate a proper PDF report from compliance data using ReportLab."""
+    # ... keep existing code (PDF generation function)
     jurisdiction = report_data.get('jurisdictionName', 'Unknown')
     compliance_score = report_data.get('complianceScore', 0)
     risk_level = report_data.get('riskLevel', 'Unknown')
@@ -367,6 +375,7 @@ def generate_pdf_report(report_data):
 
 def generate_excel_report(report_data):
     """Generate a proper Excel report from compliance data."""
+    # ... keep existing code (Excel generation function)
     # Create a BytesIO object to save the workbook to
     output = io.BytesIO()
     
@@ -454,6 +463,7 @@ def generate_excel_report(report_data):
 
 def generate_csv_report(report_data):
     """Generate a proper CSV report from compliance data."""
+    # ... keep existing code (CSV generation function)
     output = io.StringIO()
     writer = csv.writer(output)
     
@@ -496,6 +506,7 @@ def generate_csv_report(report_data):
 
 def generate_regulatory_pdf(document_content, jurisdiction):
     """Generate a proper PDF document for regulatory content using ReportLab."""
+    # ... keep existing code (regulatory PDF generation function)
     # Create a PDF in memory
     buffer = io.BytesIO()
     
@@ -559,6 +570,7 @@ def generate_regulatory_pdf(document_content, jurisdiction):
 
 def get_regulatory_document(api_key, jurisdiction, doc_type, company_profile):
     """Generate a regulatory reference document using Perplexity."""
+    # ... keep existing code (Perplexity API function)
     # Create a prompt for the Perplexity API
     prompt = f"""
     Create a detailed regulatory reference document for a {company_profile.get('companySize', '')} company in the {company_profile.get('industry', '')} industry 
@@ -587,45 +599,78 @@ def get_regulatory_document(api_key, jurisdiction, doc_type, company_profile):
     # Set a consistent seed value
     seed_value = hash(f"reg_doc_{jurisdiction}_{doc_type}_{company_profile.get('industry', '')}") % 10000
     
-    # Call the Perplexity API
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "llama-3.1-sonar-small-128k-online",
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are a regulatory compliance expert specializing in creating accurate, detailed regulatory reference documents. Your responses should be well-structured, comprehensive, and include specific regulatory details."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "temperature": 0.2,  # Lower temperature for more factual and consistent results
-        "max_tokens": 4000,
-        "random_seed": seed_value
-    }
-    
-    response = requests.post(
-        "https://api.perplexity.ai/chat/completions", 
-        headers=headers, 
-        json=payload
-    )
-    
-    if response.status_code != 200:
-        raise Exception(f"Perplexity API error: {response.text}")
-    
-    result = response.json()
-    
-    # Extract the content from the response
-    document_content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-    
-    # Format as a document
-    formatted_document = f"""
+    try:
+        # Call the Perplexity API
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "llama-3.1-sonar-small-128k-online",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a regulatory compliance expert specializing in creating accurate, detailed regulatory reference documents. Your responses should be well-structured, comprehensive, and include specific regulatory details."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": 0.2,  # Lower temperature for more factual and consistent results
+            "max_tokens": 4000,
+            "random_seed": seed_value
+        }
+        
+        print(f"Sending request to Perplexity API for regulatory document: {jurisdiction}, {doc_type}")
+        
+        response = requests.post(
+            "https://api.perplexity.ai/chat/completions", 
+            headers=headers, 
+            json=payload,
+            timeout=60  # 60 second timeout
+        )
+        
+        print(f"Received response from Perplexity API: Status {response.status_code}")
+        
+        if response.status_code != 200:
+            print(f"Perplexity API error: {response.text}")
+            return f"""
+REGULATORY REFERENCE DOCUMENT
+============================
+Jurisdiction: {jurisdiction}
+Industry: {company_profile.get('industry', 'Not specified')}
+Document Type: {doc_type}
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Error generating document: API returned status code {response.status_code}.
+
+Please try again later.
+            """
+        
+        result = response.json()
+        
+        # Extract the content from the response
+        document_content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        
+        if not document_content:
+            print("Empty response from Perplexity API")
+            return f"""
+REGULATORY REFERENCE DOCUMENT
+============================
+Jurisdiction: {jurisdiction}
+Industry: {company_profile.get('industry', 'Not specified')}
+Document Type: {doc_type}
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Error generating document: API returned an empty response.
+
+Please try again later.
+            """
+        
+        # Format as a document
+        formatted_document = f"""
 REGULATORY REFERENCE DOCUMENT
 ============================
 Jurisdiction: {jurisdiction}
@@ -634,11 +679,29 @@ Document Type: {doc_type}
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 {document_content}
-    """
-    
-    return formatted_document
+        """
+        
+        return formatted_document
+        
+    except Exception as e:
+        print(f"Error getting regulatory document: {str(e)}")
+        traceback.print_exc()
+        
+        # Return a basic document with the error
+        return f"""
+REGULATORY REFERENCE DOCUMENT
+============================
+Jurisdiction: {jurisdiction}
+Industry: {company_profile.get('industry', 'Not specified')}
+Document Type: {doc_type}
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-def get_compliance_from_perplexity(api_key: str, company_profile: Dict[str, Any], jurisdiction: str) -> Dict[str, Any]:
+Error generating document: {str(e)}
+
+Please try again later.
+        """
+
+def get_compliance_from_perplexity(api_key, company_profile, jurisdiction):
     """
     Use Perplexity API to analyze compliance requirements.
     
@@ -650,9 +713,135 @@ def get_compliance_from_perplexity(api_key: str, company_profile: Dict[str, Any]
     Returns:
         Dict containing compliance analysis
     """
-    # ... keep existing code (API call function)
+    try:
+        # Create a prompt for the LLM that requests a structured compliance analysis
+        prompt = f"""
+        Analyze the compliance requirements for a {company_profile.get('companySize', '')} company in the {company_profile.get('industry', '')} industry operating in {jurisdiction}.
+        
+        Company details:
+        - Name: {company_profile.get('companyName', 'Company')}
+        - Size: {company_profile.get('companySize', '')}
+        - Industry: {company_profile.get('industry', '')}
+        - Description: {company_profile.get('description', '')}
+        
+        Please provide a detailed compliance analysis with the following structure:
+        
+        1. Overall compliance status (compliant, partial, non-compliant)
+        2. Risk level assessment (high, medium, low)
+        3. Compliance score (0-100)
+        4. List of key compliance requirements with:
+           - Requirement title
+           - Description
+           - Category (e.g. Financial, Data Protection, Employment)
+           - Status (met, partial, not-met)
+           - Risk level for each requirement (high, medium, low)
+           - Recommendations for requirements not fully met
+           
+        Format your response as a structured JSON object with the following format:
+        ```json
+        {
+            "status": "compliant|partial|non-compliant",
+            "riskLevel": "high|medium|low",
+            "complianceScore": 85,
+            "requirementsList": [
+                {
+                    "id": "unique-id",
+                    "title": "Requirement Title",
+                    "description": "Detailed description",
+                    "category": "Category",
+                    "status": "met|partial|not-met",
+                    "risk": "high|medium|low",
+                    "recommendation": "Only include for non-met or partial requirements"
+                }
+            ]
+        }
+        ```
+        
+        Provide specific, relevant requirements for {jurisdiction} that would apply to this type of company.
+        Include at least 12 detailed requirements covering different regulatory areas.
+        """
+        
+        # Set a random seed value for consistent results
+        seed_value = hash(f"{jurisdiction}_{company_profile.get('companyName', '')}_{company_profile.get('industry', '')}") % 10000
+        
+        print(f"Sending request to Perplexity API for compliance analysis: {jurisdiction}")
+        
+        # Call the Perplexity API
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "llama-3.1-sonar-small-128k-online",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a regulatory compliance expert specializing in assessing company compliance with regulatory frameworks across different jurisdictions. You provide detailed, accurate compliance analyses and structured JSON outputs."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": 0.3,  # Lower temperature for more factual results
+            "max_tokens": 4000,
+            "random_seed": seed_value
+        }
+        
+        response = requests.post(
+            "https://api.perplexity.ai/chat/completions", 
+            headers=headers, 
+            json=payload,
+            timeout=60  # 60 second timeout
+        )
+        
+        print(f"Received response from Perplexity API: Status {response.status_code}")
+        
+        if response.status_code != 200:
+            print(f"Perplexity API error: {response.text}")
+            return None
+        
+        result = response.json()
+        
+        # Extract the content from the response
+        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        
+        if not content:
+            print("Empty response from Perplexity API")
+            return None
+        
+        # Extract JSON from the content
+        # The LLM might return extra text, so we need to find the JSON part
+        json_start = content.find('{')
+        json_end = content.rfind('}') + 1
+        
+        if json_start == -1 or json_end == 0:
+            print("Could not find JSON in response")
+            print(f"Content: {content}")
+            
+            # Try to parse the whole content as JSON
+            try:
+                return json.loads(content)
+            except:
+                return None
+        
+        json_content = content[json_start:json_end]
+        
+        try:
+            compliance_data = json.loads(json_content)
+            return compliance_data
+        except json.JSONDecodeError as e:
+            print(f"Failed to parse JSON from Perplexity response: {e}")
+            print(f"JSON content: {json_content}")
+            return None
+            
+    except Exception as e:
+        print(f"Error calling Perplexity API: {str(e)}")
+        traceback.print_exc()
+        return None
 
-def format_compliance_response(compliance_data: Dict[str, Any], jurisdiction: str) -> Dict[str, Any]:
+def format_compliance_response(compliance_data, jurisdiction):
     """
     Format the compliance data into the expected response format.
     
@@ -663,16 +852,84 @@ def format_compliance_response(compliance_data: Dict[str, Any], jurisdiction: st
     Returns:
         Formatted compliance response
     """
-    # ... keep existing code (formatting function)
+    try:
+        if not compliance_data:
+            print("Empty compliance data, cannot format")
+            return None
+            
+        # Extract total requirements
+        requirements_list = compliance_data.get('requirementsList', [])
+        total_requirements = len(requirements_list)
+        
+        # Count met requirements
+        met_requirements = sum(1 for req in requirements_list if req.get('status') == 'met')
+        
+        # Build the response structure
+        formatted_response = {
+            'jurisdictionId': jurisdiction,
+            'jurisdictionName': get_jurisdiction_name(jurisdiction),
+            'flag': get_jurisdiction_flag(jurisdiction),
+            'complianceScore': compliance_data.get('complianceScore', 0),
+            'status': compliance_data.get('status', 'non-compliant'),
+            'riskLevel': compliance_data.get('riskLevel', 'high'),
+            'requirements': {
+                'total': total_requirements,
+                'met': met_requirements,
+            },
+            'requirementsList': requirements_list,
+        }
+        
+        return formatted_response
+    except Exception as e:
+        print(f"Error formatting compliance response: {str(e)}")
+        traceback.print_exc()
+        return None
 
-def get_jurisdiction_name(jurisdiction_id: str) -> str:
+def get_jurisdiction_name(jurisdiction_id):
     """Get the name of a jurisdiction from its ID."""
-    # ... keep existing code (jurisdiction name function)
+    jurisdictions = {
+        'us': 'United States',
+        'eu': 'European Union',
+        'uk': 'United Kingdom',
+        'sg': 'Singapore',
+        'au': 'Australia',
+        'ca': 'Canada',
+        'de': 'Germany',
+        'fr': 'France',
+        'jp': 'Japan',
+        'cn': 'China',
+        'in': 'India',
+        'br': 'Brazil',
+        'za': 'South Africa',
+        'ae': 'United Arab Emirates',
+        'ch': 'Switzerland',
+    }
+    
+    return jurisdictions.get(jurisdiction_id, jurisdiction_id.upper())
 
-def get_jurisdiction_flag(jurisdiction_id: str) -> str:
+def get_jurisdiction_flag(jurisdiction_id):
     """Get the flag emoji for a jurisdiction."""
-    # ... keep existing code (flag function)
+    flags = {
+        'us': '🇺🇸',
+        'eu': '🇪🇺',
+        'uk': '🇬🇧',
+        'sg': '🇸🇬',
+        'au': '🇦🇺',
+        'ca': '🇨🇦',
+        'de': '🇩🇪',
+        'fr': '🇫🇷',
+        'jp': '🇯🇵',
+        'cn': '🇨🇳',
+        'in': '🇮🇳',
+        'br': '🇧🇷',
+        'za': '🇿🇦',
+        'ae': '🇦🇪',
+        'ch': '🇨🇭',
+    }
+    
+    return flags.get(jurisdiction_id, '🏳️')
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    debug_mode = os.environ.get("DEBUG", "True").lower() == "true"
+    app.run(host="0.0.0.0", port=port, debug=debug_mode)

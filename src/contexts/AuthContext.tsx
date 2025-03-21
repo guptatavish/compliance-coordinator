@@ -4,17 +4,26 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
-type UserRole = 'compliance_officer' | 'finance_manager' | 'executive' | null;
+// Define user roles as a type
+export type UserRole = 'compliance_officer' | 'finance_manager' | 'executive' | null;
+
+// Define the shape of our user metadata
+interface UserMetadata {
+  name?: string;
+  role?: UserRole;
+}
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  userRole: UserRole;
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string, role: UserRole) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  hasPermission: (requiredRole: UserRole | UserRole[]) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,6 +39,7 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [userRole, setUserRole] = useState<UserRole>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
@@ -38,9 +48,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, newSession) => {
+        console.log('Auth state changed:', event);
         setSession(newSession);
         setUser(newSession?.user ?? null);
+        
+        // Extract user role from metadata
+        const metadata = newSession?.user?.user_metadata as UserMetadata | undefined;
+        setUserRole(metadata?.role || null);
+        
         setIsLoading(false);
+        
+        // Clear localStorage data on sign out
+        if (event === 'SIGNED_OUT') {
+          console.log('User signed out, clearing localStorage');
+          localStorage.removeItem('companyProfile');
+          // Clear any other application-specific localStorage items
+        }
       }
     );
 
@@ -48,6 +71,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
+      
+      // Extract user role from metadata
+      const metadata = currentSession?.user?.user_metadata as UserMetadata | undefined;
+      setUserRole(metadata?.role || null);
+      
       setIsLoading(false);
     });
 
@@ -90,6 +118,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       
       if (error) throw error;
+
+      // After successful signup, store user profile in Supabase
+      try {
+        await supabase.from('user_profiles').insert([{
+          email,
+          name,
+          role
+        }]);
+      } catch (profileError) {
+        console.error('Error creating user profile:', profileError);
+      }
 
       toast({
         title: "Account created",
@@ -135,6 +174,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      
+      // Clear localStorage data on logout (redundant with the auth state listener, but ensures it happens)
+      localStorage.removeItem('companyProfile');
+      // Clear any other application-specific localStorage items
     } catch (error: any) {
       toast({
         title: "Logout failed",
@@ -145,6 +188,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false);
     }
   };
+  
+  // Check if user has the required role(s)
+  const hasPermission = (requiredRole: UserRole | UserRole[]): boolean => {
+    if (!user || !userRole) return false;
+    
+    if (Array.isArray(requiredRole)) {
+      return requiredRole.includes(userRole);
+    }
+    
+    return userRole === requiredRole;
+  };
 
   return (
     <AuthContext.Provider
@@ -153,10 +207,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         session,
         isAuthenticated: !!user,
         isLoading,
+        userRole,
         login,
         signup,
         signInWithGoogle,
-        logout
+        logout,
+        hasPermission
       }}
     >
       {children}

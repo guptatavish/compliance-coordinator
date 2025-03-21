@@ -3,20 +3,35 @@ import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader } from 'lucide-react';
+import { UserRole } from '@/contexts/AuthContext';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  requiredRoles?: UserRole | UserRole[]; // Optional roles required for access
 }
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
+  children, 
+  requiredRoles 
+}) => {
+  const { isAuthenticated, isLoading, hasPermission } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      navigate('/login');
+    if (!isLoading) {
+      // First check if the user is authenticated
+      if (!isAuthenticated) {
+        navigate('/login');
+        return;
+      }
+      
+      // Then check if the user has the required role(s)
+      if (requiredRoles && !hasPermission(requiredRoles)) {
+        // User doesn't have permission, redirect to dashboard
+        navigate('/dashboard');
+      }
     }
-  }, [isAuthenticated, isLoading, navigate]);
+  }, [isAuthenticated, isLoading, navigate, requiredRoles, hasPermission]);
 
   if (isLoading) {
     return (
@@ -30,6 +45,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }
 
   if (!isAuthenticated) {
+    return null; // This will be replaced by the redirect in useEffect
+  }
+  
+  // If requiredRoles are specified, check if the user has permission
+  if (requiredRoles && !hasPermission(requiredRoles)) {
     return null; // This will be replaced by the redirect in useEffect
   }
 
