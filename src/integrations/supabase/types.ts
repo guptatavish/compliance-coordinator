@@ -81,6 +81,44 @@ export type Database = {
         }
         Relationships: []
       }
+      compliance_reports: {
+        Row: {
+          company_profile_id: string
+          created_at: string
+          file_url: string | null
+          generated_at: string
+          id: string
+          jurisdiction_id: string
+          report_type: string
+        }
+        Insert: {
+          company_profile_id: string
+          created_at?: string
+          file_url?: string | null
+          generated_at?: string
+          id?: string
+          jurisdiction_id: string
+          report_type: string
+        }
+        Update: {
+          company_profile_id?: string
+          created_at?: string
+          file_url?: string | null
+          generated_at?: string
+          id?: string
+          jurisdiction_id?: string
+          report_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "compliance_reports_company_profile_id_fkey"
+            columns: ["company_profile_id"]
+            isOneToOne: false
+            referencedRelation: "company_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       compliance_requirements: {
         Row: {
           analysis_id: string | null
@@ -121,6 +159,82 @@ export type Database = {
             columns: ["analysis_id"]
             isOneToOne: false
             referencedRelation: "compliance_analysis"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      regulatory_documents: {
+        Row: {
+          company_profile_id: string
+          created_at: string
+          document_type: string
+          file_url: string | null
+          generated_at: string
+          id: string
+          jurisdiction_id: string
+        }
+        Insert: {
+          company_profile_id: string
+          created_at?: string
+          document_type: string
+          file_url?: string | null
+          generated_at?: string
+          id?: string
+          jurisdiction_id: string
+        }
+        Update: {
+          company_profile_id?: string
+          created_at?: string
+          document_type?: string
+          file_url?: string | null
+          generated_at?: string
+          id?: string
+          jurisdiction_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulatory_documents_company_profile_id_fkey"
+            columns: ["company_profile_id"]
+            isOneToOne: false
+            referencedRelation: "company_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_profiles: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          email: string
+          id: string
+          name: string | null
+          role: string
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          email: string
+          id: string
+          name?: string | null
+          role?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string | null
+          role?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "company_profiles"
             referencedColumns: ["id"]
           },
         ]

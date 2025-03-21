@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -21,9 +22,10 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import JurisdictionSelect from './JurisdictionSelect';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, X } from 'lucide-react';
+import { Upload, X, Building, Phone, Mail, Globe } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import RoleBasedAccess from '@/utils/RoleBasedAccess';
 
 const CompanyForm: React.FC = () => {
   const [companyName, setCompanyName] = useState('');
@@ -35,6 +37,15 @@ const CompanyForm: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [profileId, setProfileId] = useState<string | null>(null);
+  
+  // Additional critical information
+  const [companyRegistrationNumber, setCompanyRegistrationNumber] = useState('');
+  const [companyAddress, setCompanyAddress] = useState('');
+  const [companyWebsite, setCompanyWebsite] = useState('');
+  const [companyPhoneNumber, setCompanyPhoneNumber] = useState('');
+  const [companyEmail, setCompanyEmail] = useState('');
+  const [foundedYear, setFoundedYear] = useState('');
+  const [businessType, setBusinessType] = useState('');
   
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -65,6 +76,15 @@ const CompanyForm: React.FC = () => {
           setDescription(data.description || '');
           setCurrentJurisdictions(data.current_jurisdictions || []);
           setTargetJurisdictions(data.target_jurisdictions || []);
+          
+          // Set additional data if available
+          if (data.registration_number) setCompanyRegistrationNumber(data.registration_number);
+          if (data.address) setCompanyAddress(data.address);
+          if (data.website) setCompanyWebsite(data.website);
+          if (data.phone) setCompanyPhoneNumber(data.phone);
+          if (data.email) setCompanyEmail(data.email);
+          if (data.founded_year) setFoundedYear(data.founded_year);
+          if (data.business_type) setBusinessType(data.business_type);
         }
       } catch (error) {
         console.error('Error fetching company profile:', error);
@@ -130,7 +150,8 @@ const CompanyForm: React.FC = () => {
     
     if (isLoading) return;
     
-    if (!companyName || !companySize || !industry) {
+    // Validate required fields
+    if (!companyName || !companySize || !industry || !companyRegistrationNumber || !companyAddress || !companyEmail) {
       toast({
         title: "Missing information",
         description: "Please fill in all required fields.",
@@ -160,7 +181,15 @@ const CompanyForm: React.FC = () => {
         description,
         current_jurisdictions: currentJurisdictions,
         target_jurisdictions: targetJurisdictions,
-        document_urls: fileUrls
+        document_urls: fileUrls,
+        // Additional fields
+        registration_number: companyRegistrationNumber,
+        address: companyAddress,
+        website: companyWebsite,
+        phone: companyPhoneNumber,
+        email: companyEmail,
+        founded_year: foundedYear,
+        business_type: businessType
       };
       
       console.log('Saving company profile:', companyProfileData);
@@ -181,15 +210,28 @@ const CompanyForm: React.FC = () => {
         throw result.error;
       }
       
-      localStorage.setItem('companyProfile', JSON.stringify({
-        companyName,
-        companySize,
-        industry,
-        description,
-        currentJurisdictions,
-        targetJurisdictions,
-        files: files.map(file => file.name),
-      }));
+      // Update user profile with company association if this is a new company
+      if (!profileId && result.data && user) {
+        // Get the new company ID
+        const { data: newCompany } = await supabase
+          .from('company_profiles')
+          .select('id')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+          
+        if (newCompany) {
+          await supabase
+            .from('user_profiles')
+            .upsert({
+              id: user.id,
+              email: user.email || '',
+              name: user.user_metadata?.name || '',
+              role: user.user_metadata?.role || 'user',
+              company_id: newCompany.id
+            });
+        }
+      }
       
       toast({
         title: "Profile saved",
@@ -230,6 +272,18 @@ const CompanyForm: React.FC = () => {
     { value: "real_estate", label: "Real Estate Finance" },
     { value: "other", label: "Other Financial Services" },
   ];
+
+  const businessTypes = [
+    { value: "corporation", label: "Corporation" },
+    { value: "llc", label: "Limited Liability Company (LLC)" },
+    { value: "partnership", label: "Partnership" },
+    { value: "sole_proprietorship", label: "Sole Proprietorship" },
+    { value: "non_profit", label: "Non-profit" },
+    { value: "other", label: "Other" },
+  ];
+
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 100 }, (_, i) => currentYear - i);
 
   return (
     <Card className="w-full">
@@ -273,6 +327,102 @@ const CompanyForm: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="registration-number" className="required">Registration Number</Label>
+              <Input
+                id="registration-number"
+                value={companyRegistrationNumber}
+                onChange={(e) => setCompanyRegistrationNumber(e.target.value)}
+                placeholder="Company registration number"
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="founded-year">Founded Year</Label>
+              <Select 
+                value={foundedYear} 
+                onValueChange={setFoundedYear}
+              >
+                <SelectTrigger id="founded-year">
+                  <SelectValue placeholder="Select year founded" />
+                </SelectTrigger>
+                <SelectContent>
+                  {yearOptions.map((year) => (
+                    <SelectItem key={year} value={year.toString()}>
+                      {year}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="business-type">Business Type</Label>
+            <Select 
+              value={businessType} 
+              onValueChange={setBusinessType}
+            >
+              <SelectTrigger id="business-type">
+                <SelectValue placeholder="Select business type" />
+              </SelectTrigger>
+              <SelectContent>
+                {businessTypes.map((type) => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="address" className="required">Business Address</Label>
+            <Textarea
+              id="address"
+              value={companyAddress}
+              onChange={(e) => setCompanyAddress(e.target.value)}
+              placeholder="Enter your company's registered address"
+              required
+            />
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="email" className="required">Business Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={companyEmail}
+                onChange={(e) => setCompanyEmail(e.target.value)}
+                placeholder="contact@yourcompany.com"
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="phone">Business Phone</Label>
+              <Input
+                id="phone"
+                value={companyPhoneNumber}
+                onChange={(e) => setCompanyPhoneNumber(e.target.value)}
+                placeholder="+1 (555) 123-4567"
+              />
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="website">Company Website</Label>
+            <Input
+              id="website"
+              value={companyWebsite}
+              onChange={(e) => setCompanyWebsite(e.target.value)}
+              placeholder="https://www.yourcompany.com"
+            />
           </div>
           
           <div className="space-y-2">

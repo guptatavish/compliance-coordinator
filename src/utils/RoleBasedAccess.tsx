@@ -18,10 +18,12 @@ const RoleBasedAccess: React.FC<RoleBasedAccessProps> = ({
 }) => {
   const { hasPermission } = useAuth();
   
+  // Check if user has the required role(s) to access this content
   if (hasPermission(allowedRoles)) {
     return <>{children}</>;
   }
   
+  // Render fallback content or nothing if user doesn't have permission
   return fallback ? <>{fallback}</> : null;
 };
 
