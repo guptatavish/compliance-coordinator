@@ -37,6 +37,22 @@ export interface CompanyProfile {
 }
 
 /**
+ * Checks if the Python backend is running
+ */
+export const checkPythonBackendHealth = async (): Promise<boolean> => {
+  try {
+    const response = await fetch(`${PYTHON_API_URL}/health`, {
+      method: 'GET',
+    });
+    
+    return response.ok;
+  } catch (error) {
+    console.error('Error checking Python backend health:', error);
+    return false;
+  }
+};
+
+/**
  * Analyzes company compliance based on company profile and jurisdiction
  */
 export const analyzeComplianceWithPython = async (
@@ -56,6 +72,14 @@ export const analyzeComplianceWithPython = async (
       throw new Error('Perplexity API key not found');
     }
     
+    // First check if the Python backend is running
+    const isBackendHealthy = await checkPythonBackendHealth();
+    if (!isBackendHealthy) {
+      throw new Error('Python backend is not running or not accessible');
+    }
+    
+    console.log(`Sending request to Python backend at ${PYTHON_API_URL}/analyze-compliance`);
+    
     const response = await fetch(`${PYTHON_API_URL}/analyze-compliance`, {
       method: 'POST',
       headers: {
@@ -70,10 +94,12 @@ export const analyzeComplianceWithPython = async (
     
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`API request failed: ${errorText}`);
+      throw new Error(`Python API request failed: ${response.status} - ${errorText}`);
     }
     
-    return await response.json();
+    const result = await response.json();
+    console.log('Received compliance data from Python backend:', result);
+    return result;
   } catch (error) {
     console.error('Error analyzing compliance:', error);
     // Return fallback data with error indication

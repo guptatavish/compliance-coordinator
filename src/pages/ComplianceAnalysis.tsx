@@ -1,8 +1,7 @@
-
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import ComplianceCard, { ComplianceStatus, ComplianceLevel } from '../components/ComplianceCard';
+import ComplianceCard from '../components/ComplianceCard';
 import StatusChart from '../components/StatusChart';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,16 +13,7 @@ import { getPerplexityApiKey, hasPerplexityApiKey } from '@/utils/apiKeys';
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { AlertTriangle, BookOpen, CheckSquare, Clock, Download, FileText, InfoIcon, LineChart, RefreshCw } from 'lucide-react';
-
-interface Requirement {
-  id?: string;
-  category: string;
-  title: string;
-  description: string;
-  status: 'met' | 'partial' | 'not-met';
-  risk: ComplianceLevel;
-  recommendation?: string;
-}
+import { analyzeComplianceWithPython, checkPythonBackendHealth, ComplianceStatus, ComplianceLevel, Requirement } from '../services/ComplianceService';
 
 interface JurisdictionData {
   jurisdictionId: string;
@@ -49,26 +39,33 @@ const ComplianceAnalysis: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisComplete, setAnalysisComplete] = useState(false);
   const [jurisdictionsData, setJurisdictionsData] = useState<JurisdictionData[]>([]);
+  const [pythonBackendAvailable, setPythonBackendAvailable] = useState<boolean | null>(null);
   
-  // Check if there's a stored profile
   const hasCompanyProfile = !!localStorage.getItem('companyProfile');
   const companyProfileData = hasCompanyProfile 
     ? JSON.parse(localStorage.getItem('companyProfile')!) 
     : null;
   
-  // Redirect to login if not authenticated
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
     }
   }, [isAuthenticated, navigate]);
 
-  // Redirect to company profile page if no profile is set up
   useEffect(() => {
     if (isAuthenticated && !hasCompanyProfile) {
       navigate('/company-profile');
     }
   }, [isAuthenticated, hasCompanyProfile, navigate]);
+
+  useEffect(() => {
+    const checkBackendHealth = async () => {
+      const isHealthy = await checkPythonBackendHealth();
+      setPythonBackendAvailable(isHealthy);
+    };
+    
+    checkBackendHealth();
+  }, []);
 
   const handleRunAnalysis = async () => {
     if (!hasPerplexityApiKey()) {
@@ -79,13 +76,19 @@ const ComplianceAnalysis: React.FC = () => {
       });
       return;
     }
+    
+    if (!pythonBackendAvailable) {
+      toast({
+        title: "Python Backend Not Available",
+        description: "The Python backend is not running or not accessible. Please start the Python backend and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsAnalyzing(true);
     
     try {
-      const apiKey = getPerplexityApiKey();
-      
-      // Save company profile to database
       let companyId: string | null = null;
       const { data: companyData, error: companyError } = await supabase
         .from('company_profiles')
@@ -98,84 +101,93 @@ const ComplianceAnalysis: React.FC = () => {
           target_jurisdictions: companyProfileData.targetJurisdictions
         }])
         .select('id')
-        .single();
+        .maybeSingle();
       
       if (companyError) {
         console.error("Error saving company profile:", companyError);
-        throw new Error("Failed to save company profile");
+      } else if (companyData) {
+        companyId = companyData.id;
       }
       
-      companyId = companyData.id;
+      const analysisResults: JurisdictionData[] = [];
       
-      // Call the Supabase Edge Function to analyze regulations
-      const { data, error } = await supabase.functions.invoke('analyze-regulations', {
-        body: { 
-          companyProfile: companyProfileData,
-          apiKey
-        }
-      });
-      
-      if (error) {
-        console.error("Edge function error:", error);
-        throw new Error("Analysis failed: " + error.message);
-      }
-      
-      const { analysisResults } = data;
-      
-      // Add flags to the results
-      const enrichedResults = analysisResults.map((result: JurisdictionData) => {
-        const matchingJurisdiction = jurisdictions.find(j => j.id === result.jurisdictionId);
-        return {
-          ...result,
-          flag: matchingJurisdiction?.flag || '🏳️'
-        };
-      });
-      
-      // Save analysis results to database
-      for (const result of enrichedResults) {
-        // Save analysis
-        const { data: analysisData, error: analysisError } = await supabase
-          .from('compliance_analysis')
-          .insert([{
-            company_profile_id: companyId,
-            jurisdiction_id: result.jurisdictionId,
-            jurisdiction_name: result.jurisdictionName,
-            compliance_score: result.complianceScore,
-            status: result.status,
-            risk_level: result.riskLevel
-          }])
-          .select('id')
-          .single();
+      for (const jurisdictionId of companyProfileData.currentJurisdictions) {
+        console.log(`Analyzing jurisdiction: ${jurisdictionId}`);
         
-        if (analysisError) {
-          console.error("Error saving analysis:", analysisError);
-          continue;
-        }
-        
-        // Save requirements
-        const analysisId = analysisData.id;
-        const requirementsToInsert = result.requirementsList.map(req => ({
-          analysis_id: analysisId,
-          category: req.category,
-          title: req.title,
-          description: req.description,
-          status: req.status,
-          risk: req.risk,
-          recommendation: req.recommendation
-        }));
-        
-        if (requirementsToInsert.length > 0) {
-          const { error: reqError } = await supabase
-            .from('compliance_requirements')
-            .insert(requirementsToInsert);
+        try {
+          const result = await analyzeComplianceWithPython(jurisdictionId);
           
-          if (reqError) {
-            console.error("Error saving requirements:", reqError);
+          const matchingJurisdiction = jurisdictions.find(j => j.id === result.jurisdictionId);
+          const enrichedResult = {
+            ...result,
+            flag: matchingJurisdiction?.flag || '🏳️'
+          };
+          
+          analysisResults.push(enrichedResult);
+          
+          if (companyId) {
+            try {
+              const { data: analysisData, error: analysisError } = await supabase
+                .from('compliance_analysis')
+                .insert([{
+                  company_profile_id: companyId,
+                  jurisdiction_id: result.jurisdictionId,
+                  jurisdiction_name: result.jurisdictionName,
+                  compliance_score: result.complianceScore,
+                  status: result.status,
+                  risk_level: result.riskLevel
+                }])
+                .select('id')
+                .maybeSingle();
+              
+              if (analysisError) {
+                console.error("Error saving analysis:", analysisError);
+                continue;
+              }
+              
+              if (analysisData) {
+                const analysisId = analysisData.id;
+                const requirementsToInsert = result.requirementsList.map(req => ({
+                  analysis_id: analysisId,
+                  title: req.title,
+                  description: req.description,
+                  is_met: req.isMet
+                }));
+                
+                if (requirementsToInsert.length > 0) {
+                  const { error: reqError } = await supabase
+                    .from('compliance_requirements')
+                    .insert(requirementsToInsert);
+                  
+                  if (reqError) {
+                    console.error("Error saving requirements:", reqError);
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("Error saving analysis to database:", err);
+            }
           }
+        } catch (err) {
+          console.error(`Error analyzing jurisdiction ${jurisdictionId}:`, err);
+          
+          analysisResults.push({
+            jurisdictionId: jurisdictionId,
+            jurisdictionName: getJurisdictionName(jurisdictionId),
+            complianceScore: 0,
+            status: 'non-compliant',
+            riskLevel: 'high',
+            requirements: {
+              total: 0,
+              met: 0,
+            },
+            requirementsList: [],
+            error: err instanceof Error ? err.message : 'Unknown error'
+          });
         }
       }
       
-      setJurisdictionsData(enrichedResults);
+      setJurisdictionsData(analysisResults);
       setAnalysisComplete(true);
       
       toast({
@@ -199,7 +211,11 @@ const ComplianceAnalysis: React.FC = () => {
     ? jurisdictionsData.find(j => j.jurisdictionId === selectedJurisdiction)
     : null;
 
-  // Chart data for selected jurisdiction
+  const getJurisdictionName = (jurisdictionId: string): string => {
+    const jurisdiction = jurisdictions.find(j => j.id === jurisdictionId);
+    return jurisdiction ? jurisdiction.name : jurisdictionId;
+  };
+
   const getCategoryAnalysisData = () => {
     if (!selectedData) return [];
     
@@ -264,6 +280,24 @@ const ComplianceAnalysis: React.FC = () => {
           </Alert>
         )}
         
+        {pythonBackendAvailable === false && (
+          <Alert className="mb-8 border-danger-500/50 bg-danger-50/50">
+            <AlertTriangle className="h-4 w-4 text-danger-500" />
+            <AlertTitle className="text-danger-500">Python Backend Not Available</AlertTitle>
+            <AlertDescription className="text-danger-600">
+              The Python backend is not running or not accessible. Please start the Python backend and refresh this page.
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="ml-4"
+                onClick={() => window.location.reload()}
+              >
+                Refresh Page
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+        
         {!isAnalyzing && !analysisComplete && (
           <Card className="mb-8">
             <CardContent className="pt-6">
@@ -311,7 +345,6 @@ const ComplianceAnalysis: React.FC = () => {
         
         {analysisComplete && (
           <div className="space-y-8">
-            {/* Summary Alert */}
             <Alert className="border-warning-500/50 bg-warning-50/50">
               <AlertTriangle className="h-4 w-4 text-warning-500" />
               <AlertTitle className="text-warning-500">Compliance Gaps Detected</AlertTitle>
@@ -320,7 +353,6 @@ const ComplianceAnalysis: React.FC = () => {
               </AlertDescription>
             </Alert>
             
-            {/* Jurisdictions Grid */}
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold">Jurisdictions</h2>
@@ -347,7 +379,6 @@ const ComplianceAnalysis: React.FC = () => {
               </div>
             </div>
             
-            {/* Selected Jurisdiction Details */}
             {selectedData && (
               <div className="space-y-6">
                 <div className="flex items-center space-x-3">
@@ -516,7 +547,6 @@ const ComplianceAnalysis: React.FC = () => {
                   </CardContent>
                 </Card>
                 
-                {/* Regulatory References */}
                 <Card>
                   <CardHeader>
                     <CardTitle>Regulatory References</CardTitle>
@@ -560,3 +590,4 @@ const ComplianceAnalysis: React.FC = () => {
 };
 
 export default ComplianceAnalysis;
+
