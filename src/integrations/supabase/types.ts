@@ -11,37 +11,61 @@ export type Database = {
     Tables: {
       company_profiles: {
         Row: {
+          address: string | null
+          business_type: string | null
           company_name: string
           company_size: string
           created_at: string
           current_jurisdictions: string[]
           description: string | null
+          document_urls: string[] | null
+          email: string | null
+          founded_year: string | null
           id: string
           industry: string
+          phone: string | null
+          registration_number: string | null
           target_jurisdictions: string[] | null
           updated_at: string
+          website: string | null
         }
         Insert: {
+          address?: string | null
+          business_type?: string | null
           company_name: string
           company_size: string
           created_at?: string
           current_jurisdictions: string[]
           description?: string | null
+          document_urls?: string[] | null
+          email?: string | null
+          founded_year?: string | null
           id?: string
           industry: string
+          phone?: string | null
+          registration_number?: string | null
           target_jurisdictions?: string[] | null
           updated_at?: string
+          website?: string | null
         }
         Update: {
+          address?: string | null
+          business_type?: string | null
           company_name?: string
           company_size?: string
           created_at?: string
           current_jurisdictions?: string[]
           description?: string | null
+          document_urls?: string[] | null
+          email?: string | null
+          founded_year?: string | null
           id?: string
           industry?: string
+          phone?: string | null
+          registration_number?: string | null
           target_jurisdictions?: string[] | null
           updated_at?: string
+          website?: string | null
         }
         Relationships: []
       }

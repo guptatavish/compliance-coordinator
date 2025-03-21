@@ -3,6 +3,8 @@ import React from 'react';
 import Layout from '../components/Layout';
 import CompanyForm from '../components/CompanyForm';
 import ProtectedRoute from '../components/ProtectedRoute';
+import { useAuth } from '@/contexts/AuthContext';
+import RoleBasedAccess from '@/utils/RoleBasedAccess';
 
 const CompanyProfile: React.FC = () => {
   return (
@@ -17,7 +19,14 @@ const CompanyProfile: React.FC = () => {
           </div>
           
           <div className="max-w-4xl mx-auto">
-            <CompanyForm />
+            <RoleBasedAccess 
+              allowedRoles={['compliance_officer', 'finance_manager', 'executive']}
+              fallback={<div className="p-4 bg-yellow-50 rounded-md border border-yellow-200 text-yellow-800">
+                You do not have permission to manage company profiles. Please contact your administrator.
+              </div>}
+            >
+              <CompanyForm />
+            </RoleBasedAccess>
           </div>
         </div>
       </Layout>
