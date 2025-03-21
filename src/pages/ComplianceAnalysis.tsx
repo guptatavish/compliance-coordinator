@@ -10,10 +10,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { jurisdictions } from '../components/JurisdictionSelect';
 import { useAuth } from '../contexts/AuthContext';
-import { AlertTriangle, BookOpen, CheckSquare, Clock, Download, FileText, LineChart, RefreshCw } from 'lucide-react';
+import { getPerplexityApiKey, hasPerplexityApiKey } from '@/utils/apiKeys';
+import { useToast } from "@/components/ui/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { AlertTriangle, BookOpen, CheckSquare, Clock, Download, FileText, InfoIcon, LineChart, RefreshCw } from 'lucide-react';
 
 interface Requirement {
-  id: string;
+  id?: string;
   category: string;
   title: string;
   description: string;
@@ -25,7 +28,7 @@ interface Requirement {
 interface JurisdictionData {
   jurisdictionId: string;
   jurisdictionName: string;
-  flag: string;
+  flag?: string;
   complianceScore: number;
   status: ComplianceStatus;
   riskLevel: ComplianceLevel;
@@ -35,14 +38,17 @@ interface JurisdictionData {
   };
   recentChanges?: number;
   requirementsList: Requirement[];
+  error?: string;
 }
 
 const ComplianceAnalysis: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [selectedJurisdiction, setSelectedJurisdiction] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisComplete, setAnalysisComplete] = useState(false);
+  const [jurisdictionsData, setJurisdictionsData] = useState<JurisdictionData[]>([]);
   
   // Check if there's a stored profile
   const hasCompanyProfile = !!localStorage.getItem('companyProfile');
@@ -64,91 +70,129 @@ const ComplianceAnalysis: React.FC = () => {
     }
   }, [isAuthenticated, hasCompanyProfile, navigate]);
 
-  // Generate sample compliance data (in a real app, this would come from an API)
-  const generateJurisdictionData = (): JurisdictionData[] => {
-    return companyProfileData?.currentJurisdictions?.map((id: string) => {
-      const jurisdiction = jurisdictions.find(j => j.id === id);
-      
-      // Generate random compliance data for demo
-      const score = Math.floor(Math.random() * 70) + 30;
-      let status: ComplianceStatus;
-      let riskLevel: ComplianceLevel;
-      
-      if (score >= 80) {
-        status = 'compliant';
-        riskLevel = 'low';
-      } else if (score >= 60) {
-        status = 'partial';
-        riskLevel = 'medium';
-      } else {
-        status = 'non-compliant';
-        riskLevel = 'high';
-      }
-      
-      const totalReqs = Math.floor(Math.random() * 30) + 20;
-      const metReqs = Math.floor(totalReqs * (score / 100));
-      
-      // Generate requirements
-      const requirementCategories = [
-        'KYC/AML',
-        'Data Protection',
-        'Reporting',
-        'Licensing',
-        'Consumer Protection',
-        'Capital Requirements'
-      ];
-      
-      const requirements: Requirement[] = [];
-      
-      for (let i = 0; i < totalReqs; i++) {
-        const status = i < metReqs ? 'met' : Math.random() > 0.5 ? 'partial' : 'not-met';
-        const risk = status === 'met' ? 'low' : status === 'partial' ? 'medium' : 'high';
-        const category = requirementCategories[Math.floor(Math.random() * requirementCategories.length)];
-        
-        requirements.push({
-          id: `req-${i}`,
-          category,
-          title: `${category} Requirement ${i + 1}`,
-          description: `Financial regulation requirement for ${jurisdiction?.name} related to ${category.toLowerCase()}.`,
-          status,
-          risk,
-          recommendation: status !== 'met' ? `Implement ${category} measures according to ${jurisdiction?.name} regulations.` : undefined
-        });
-      }
-      
-      return {
-        jurisdictionId: id,
-        jurisdictionName: jurisdiction?.name || id,
-        flag: jurisdiction?.flag || '🏳️',
-        complianceScore: score,
-        status,
-        riskLevel,
-        requirements: {
-          total: totalReqs,
-          met: metReqs,
-        },
-        recentChanges: Math.random() > 0.7 ? Math.floor(Math.random() * 3) + 1 : 0,
-        requirementsList: requirements
-      };
-    }) || [];
-  };
-
-  const [jurisdictionsData, setJurisdictionsData] = useState<JurisdictionData[]>([]);
-  
-  useEffect(() => {
-    if (hasCompanyProfile) {
-      setJurisdictionsData(generateJurisdictionData());
+  const handleRunAnalysis = async () => {
+    if (!hasPerplexityApiKey()) {
+      toast({
+        title: "API Key Required",
+        description: "Please add your Perplexity API key in Settings before running analysis.",
+        variant: "destructive",
+      });
+      return;
     }
-  }, [hasCompanyProfile]);
 
-  const handleRunAnalysis = () => {
     setIsAnalyzing(true);
     
-    // Simulate analysis process
-    setTimeout(() => {
-      setIsAnalyzing(false);
+    try {
+      const apiKey = getPerplexityApiKey();
+      
+      // Save company profile to database
+      let companyId: string | null = null;
+      const { data: companyData, error: companyError } = await supabase
+        .from('company_profiles')
+        .insert([{
+          company_name: companyProfileData.companyName,
+          company_size: companyProfileData.companySize,
+          industry: companyProfileData.industry,
+          description: companyProfileData.description,
+          current_jurisdictions: companyProfileData.currentJurisdictions,
+          target_jurisdictions: companyProfileData.targetJurisdictions
+        }])
+        .select('id')
+        .single();
+      
+      if (companyError) {
+        console.error("Error saving company profile:", companyError);
+        throw new Error("Failed to save company profile");
+      }
+      
+      companyId = companyData.id;
+      
+      // Call the Supabase Edge Function to analyze regulations
+      const { data, error } = await supabase.functions.invoke('analyze-regulations', {
+        body: { 
+          companyProfile: companyProfileData,
+          apiKey
+        }
+      });
+      
+      if (error) {
+        console.error("Edge function error:", error);
+        throw new Error("Analysis failed: " + error.message);
+      }
+      
+      const { analysisResults } = data;
+      
+      // Add flags to the results
+      const enrichedResults = analysisResults.map((result: JurisdictionData) => {
+        const matchingJurisdiction = jurisdictions.find(j => j.id === result.jurisdictionId);
+        return {
+          ...result,
+          flag: matchingJurisdiction?.flag || '🏳️'
+        };
+      });
+      
+      // Save analysis results to database
+      for (const result of enrichedResults) {
+        // Save analysis
+        const { data: analysisData, error: analysisError } = await supabase
+          .from('compliance_analysis')
+          .insert([{
+            company_profile_id: companyId,
+            jurisdiction_id: result.jurisdictionId,
+            jurisdiction_name: result.jurisdictionName,
+            compliance_score: result.complianceScore,
+            status: result.status,
+            risk_level: result.riskLevel
+          }])
+          .select('id')
+          .single();
+        
+        if (analysisError) {
+          console.error("Error saving analysis:", analysisError);
+          continue;
+        }
+        
+        // Save requirements
+        const analysisId = analysisData.id;
+        const requirementsToInsert = result.requirementsList.map(req => ({
+          analysis_id: analysisId,
+          category: req.category,
+          title: req.title,
+          description: req.description,
+          status: req.status,
+          risk: req.risk,
+          recommendation: req.recommendation
+        }));
+        
+        if (requirementsToInsert.length > 0) {
+          const { error: reqError } = await supabase
+            .from('compliance_requirements')
+            .insert(requirementsToInsert);
+          
+          if (reqError) {
+            console.error("Error saving requirements:", reqError);
+          }
+        }
+      }
+      
+      setJurisdictionsData(enrichedResults);
       setAnalysisComplete(true);
-    }, 2500);
+      
+      toast({
+        title: "Analysis Complete",
+        description: "Compliance analysis has been completed successfully.",
+      });
+      
+    } catch (error) {
+      console.error("Analysis error:", error);
+      toast({
+        title: "Analysis Failed",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const selectedData = selectedJurisdiction
@@ -202,6 +246,24 @@ const ComplianceAnalysis: React.FC = () => {
           </p>
         </div>
         
+        {!hasPerplexityApiKey() && (
+          <Alert className="mb-8 border-warning-500/50 bg-warning-50/50">
+            <InfoIcon className="h-4 w-4 text-warning-500" />
+            <AlertTitle className="text-warning-500">Perplexity API Key Required</AlertTitle>
+            <AlertDescription className="text-warning-600">
+              You need to add a Perplexity API key in the Settings page before you can run a compliance analysis.
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="ml-4" 
+                onClick={() => navigate('/settings')}
+              >
+                Go to Settings
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+        
         {!isAnalyzing && !analysisComplete && (
           <Card className="mb-8">
             <CardContent className="pt-6">
@@ -213,7 +275,10 @@ const ComplianceAnalysis: React.FC = () => {
                 <p className="text-muted-foreground mb-8 max-w-md mx-auto">
                   Analyze your compliance status across all jurisdictions to identify gaps and receive recommendations.
                 </p>
-                <Button onClick={handleRunAnalysis}>
+                <Button 
+                  onClick={handleRunAnalysis} 
+                  disabled={!hasPerplexityApiKey()}
+                >
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Run Analysis
                 </Button>
@@ -325,9 +390,9 @@ const ComplianceAnalysis: React.FC = () => {
                       </TabsList>
                       
                       <TabsContent value="all" className="space-y-4">
-                        {selectedData.requirementsList.map((req) => (
+                        {selectedData.requirementsList.map((req, index) => (
                           <div 
-                            key={req.id} 
+                            key={req.id || index} 
                             className={`p-4 rounded-lg border ${
                               req.status === 'met'
                                 ? 'border-success-100 bg-success-50/30'
@@ -377,9 +442,9 @@ const ComplianceAnalysis: React.FC = () => {
                       <TabsContent value="issues" className="space-y-4">
                         {selectedData.requirementsList
                           .filter(req => req.status !== 'met')
-                          .map((req) => (
+                          .map((req, index) => (
                             <div 
-                              key={req.id} 
+                              key={req.id || `issue-${index}`} 
                               className={`p-4 rounded-lg border ${
                                 req.status === 'partial'
                                   ? 'border-warning-100 bg-warning-50/30'
@@ -423,9 +488,9 @@ const ComplianceAnalysis: React.FC = () => {
                       <TabsContent value="met" className="space-y-4">
                         {selectedData.requirementsList
                           .filter(req => req.status === 'met')
-                          .map((req) => (
+                          .map((req, index) => (
                             <div 
-                              key={req.id} 
+                              key={req.id || `met-${index}`} 
                               className="p-4 rounded-lg border border-success-100 bg-success-50/30"
                             >
                               <div className="flex items-start">

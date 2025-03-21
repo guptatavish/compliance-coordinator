@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -23,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import JurisdictionSelect from './JurisdictionSelect';
 import { useToast } from '@/hooks/use-toast';
 import { Upload, X } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 const CompanyForm: React.FC = () => {
   const [companyName, setCompanyName] = useState('');
@@ -84,10 +84,7 @@ const CompanyForm: React.FC = () => {
     setIsLoading(true);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Store data in localStorage for this demo
+      // Create company profile object
       const companyProfile = {
         companyName,
         companySize,
@@ -98,7 +95,22 @@ const CompanyForm: React.FC = () => {
         files: files.map(file => file.name),
       };
       
+      // Store in localStorage for this demo
       localStorage.setItem('companyProfile', JSON.stringify(companyProfile));
+      
+      // Also save to Supabase if possible
+      try {
+        await supabase.from('company_profiles').insert([{
+          company_name: companyName,
+          company_size: companySize,
+          industry,
+          description,
+          current_jurisdictions: currentJurisdictions,
+          target_jurisdictions: targetJurisdictions
+        }]);
+      } catch (dbError) {
+        console.error("Failed to save to database, but continuing with localStorage:", dbError);
+      }
       
       toast({
         title: "Profile saved",
@@ -117,7 +129,6 @@ const CompanyForm: React.FC = () => {
     }
   };
 
-  // Company size options
   const companySizes = [
     { value: "1-10", label: "1-10 employees" },
     { value: "11-50", label: "11-50 employees" },
@@ -127,7 +138,6 @@ const CompanyForm: React.FC = () => {
     { value: "1001+", label: "1001+ employees" },
   ];
 
-  // Industry options
   const industries = [
     { value: "banking", label: "Banking" },
     { value: "insurance", label: "Insurance" },
