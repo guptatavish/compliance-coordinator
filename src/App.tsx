@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import CompanyProfile from "./pages/CompanyProfile";
 import ComplianceAnalysis from "./pages/ComplianceAnalysis";
 import Reports from "./pages/Reports";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import AuthForm from "./components/AuthForm";
 import Layout from "./components/Layout";
@@ -29,6 +30,7 @@ const App = () => (
             <Route path="/company-profile" element={<CompanyProfile />} />
             <Route path="/compliance-analysis" element={<ComplianceAnalysis />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="/login" element={
               <Layout showFooter={false}>
                 <div className="container px-4 py-16 mt-16">

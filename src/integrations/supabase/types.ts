@@ -9,7 +9,122 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      company_profiles: {
+        Row: {
+          company_name: string
+          company_size: string
+          created_at: string
+          current_jurisdictions: string[]
+          description: string | null
+          id: string
+          industry: string
+          target_jurisdictions: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          company_name: string
+          company_size: string
+          created_at?: string
+          current_jurisdictions: string[]
+          description?: string | null
+          id?: string
+          industry: string
+          target_jurisdictions?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          company_name?: string
+          company_size?: string
+          created_at?: string
+          current_jurisdictions?: string[]
+          description?: string | null
+          id?: string
+          industry?: string
+          target_jurisdictions?: string[] | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      compliance_analysis: {
+        Row: {
+          company_profile_id: string
+          compliance_score: number
+          created_at: string
+          id: string
+          jurisdiction_id: string
+          jurisdiction_name: string
+          risk_level: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_profile_id: string
+          compliance_score: number
+          created_at?: string
+          id?: string
+          jurisdiction_id: string
+          jurisdiction_name: string
+          risk_level: string
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          company_profile_id?: string
+          compliance_score?: number
+          created_at?: string
+          id?: string
+          jurisdiction_id?: string
+          jurisdiction_name?: string
+          risk_level?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      compliance_requirements: {
+        Row: {
+          analysis_id: string | null
+          category: string
+          created_at: string
+          description: string
+          id: string
+          recommendation: string | null
+          risk: string
+          status: string
+          title: string
+        }
+        Insert: {
+          analysis_id?: string | null
+          category: string
+          created_at?: string
+          description: string
+          id?: string
+          recommendation?: string | null
+          risk: string
+          status: string
+          title: string
+        }
+        Update: {
+          analysis_id?: string | null
+          category?: string
+          created_at?: string
+          description?: string
+          id?: string
+          recommendation?: string | null
+          risk?: string
+          status?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "compliance_requirements_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "compliance_analysis"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Menu, X, User, BarChart2, FileText, Building, ShieldCheck, LogOut } from 'lucide-react';
+import { Menu, X, User, BarChart2, FileText, Building, ShieldCheck, LogOut, Settings } from 'lucide-react';
 
 const Navbar: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -106,6 +106,12 @@ const Navbar: React.FC = () => {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem className="cursor-pointer" asChild>
+                    <Link to="/settings">
+                      <Settings className="mr-2 h-4 w-4" />
+                      <span>Settings</span>
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuItem className="cursor-pointer">
                     <User className="mr-2 h-4 w-4" />
                     <span>Profile</span>
@@ -171,6 +177,13 @@ const Navbar: React.FC = () => {
                       <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
                     </div>
                   </div>
+                  <Link
+                    to="/settings"
+                    className="flex w-full items-center py-2 px-3 text-base font-medium rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </Link>
                   <button
                     onClick={logout}
                     className="flex w-full items-center py-2 px-3 text-base font-medium rounded-md transition-colors hover:bg-accent hover:text-accent-foreground"
