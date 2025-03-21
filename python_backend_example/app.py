@@ -12,9 +12,10 @@ Requirements:
 - requests
 - python-dotenv (optional, for loading .env file)
 - flask-cors
+- reportlab (for PDF generation)
 
 To run:
-1. Install dependencies: pip install flask requests flask-cors
+1. Install dependencies: pip install flask requests flask-cors reportlab
 2. Run the server: python app.py
 """
 
@@ -28,6 +29,12 @@ import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import io
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+import csv
+import xlsxwriter
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -113,16 +120,13 @@ def export_report(format):
         if not report_data:
             return jsonify({"error": "No report data provided"}), 400
         
-        # In a real implementation, you would generate the actual file here
-        # For this example, we'll return a placeholder file
-        
         if format == 'pdf':
-            # Create a simple placeholder PDF report
-            # In a real implementation, you'd use a PDF generation library
-            report_content = generate_pdf_report(report_data)
+            # Generate a proper PDF file using ReportLab
+            pdf_bytes = generate_pdf_report(report_data)
             
-            # Convert text to bytes for serving as a file
-            bytes_io = io.BytesIO(report_content.encode('utf-8'))
+            # Create a BytesIO object from the PDF content
+            bytes_io = io.BytesIO(pdf_bytes)
+            bytes_io.seek(0)
             
             return send_file(
                 bytes_io,
@@ -132,11 +136,12 @@ def export_report(format):
             )
             
         elif format == 'excel':
-            # In a real implementation, you'd use an Excel generation library
-            report_content = generate_excel_report(report_data)
+            # Generate a proper Excel file
+            excel_bytes = generate_excel_report(report_data)
             
-            # Convert text to bytes for serving as a file
-            bytes_io = io.BytesIO(report_content.encode('utf-8'))
+            # Create a BytesIO object from the Excel content
+            bytes_io = io.BytesIO(excel_bytes)
+            bytes_io.seek(0)
             
             return send_file(
                 bytes_io,
@@ -146,11 +151,12 @@ def export_report(format):
             )
             
         elif format == 'csv':
-            # In a real implementation, you'd use a CSV generation library
-            report_content = generate_csv_report(report_data)
+            # Generate a proper CSV file
+            csv_bytes = generate_csv_report(report_data)
             
-            # Convert text to bytes for serving as a file
-            bytes_io = io.BytesIO(report_content.encode('utf-8'))
+            # Create a BytesIO object from the CSV content
+            bytes_io = io.BytesIO(csv_bytes)
+            bytes_io.seek(0)
             
             return send_file(
                 bytes_io,
@@ -209,8 +215,12 @@ def export_regulatory_doc():
                 'content': document_content
             }
         
-        # Convert text to bytes for serving as a file
-        bytes_io = io.BytesIO(document_content.encode('utf-8'))
+        # Generate a proper PDF document
+        pdf_bytes = generate_regulatory_pdf(document_content, jurisdiction)
+        
+        # Create a BytesIO object from the PDF content
+        bytes_io = io.BytesIO(pdf_bytes)
+        bytes_io.seek(0)
         
         return send_file(
             bytes_io,
@@ -224,104 +234,328 @@ def export_regulatory_doc():
         return jsonify({"error": f"Failed to export regulatory document: {str(e)}"}), 500
 
 def generate_pdf_report(report_data):
-    """Generate a PDF report from compliance data."""
+    """Generate a proper PDF report from compliance data using ReportLab."""
     jurisdiction = report_data.get('jurisdictionName', 'Unknown')
     compliance_score = report_data.get('complianceScore', 0)
     risk_level = report_data.get('riskLevel', 'Unknown')
     status = report_data.get('status', 'Unknown')
     requirements = report_data.get('requirementsList', [])
     
-    # Create a text-based representation of the PDF (in a real app, use a PDF library)
-    content = f"""
-COMPLIANCE ANALYSIS REPORT
-==========================
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-JURISDICTION: {jurisdiction}
-
-SUMMARY
--------
-Compliance Score: {compliance_score}%
-Risk Level: {risk_level}
-Status: {status}
-
-REQUIREMENTS SUMMARY
--------------------
-Total Requirements: {report_data.get('requirements', {}).get('total', 0)}
-Requirements Met: {report_data.get('requirements', {}).get('met', 0)}
-
-DETAILED REQUIREMENTS
---------------------
-"""
+    # Create a PDF in memory
+    buffer = io.BytesIO()
+    
+    # Create the PDF document using ReportLab
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = styles['Title']
+    heading_style = styles['Heading1']
+    normal_style = styles['Normal']
+    
+    # Create header style for requirement titles
+    req_title_style = ParagraphStyle(
+        'ReqTitle',
+        parent=styles['Heading2'],
+        fontSize=12,
+        spaceAfter=6
+    )
+    
+    # Build the document content
+    content = []
+    
+    # Add title
+    content.append(Paragraph("COMPLIANCE ANALYSIS REPORT", title_style))
+    content.append(Spacer(1, 12))
+    
+    # Add generated date
+    content.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
+    content.append(Spacer(1, 12))
+    
+    # Add jurisdiction
+    content.append(Paragraph(f"JURISDICTION: {jurisdiction}", heading_style))
+    content.append(Spacer(1, 12))
+    
+    # Summary section
+    content.append(Paragraph("SUMMARY", heading_style))
+    content.append(Spacer(1, 6))
+    
+    summary_data = [
+        ["Compliance Score:", f"{compliance_score}%"],
+        ["Risk Level:", risk_level],
+        ["Status:", status]
+    ]
+    
+    summary_table = Table(summary_data, colWidths=[150, 300])
+    summary_table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    
+    content.append(summary_table)
+    content.append(Spacer(1, 12))
+    
+    # Requirements summary
+    content.append(Paragraph("REQUIREMENTS SUMMARY", heading_style))
+    content.append(Spacer(1, 6))
+    
+    req_summary_data = [
+        ["Total Requirements:", str(report_data.get('requirements', {}).get('total', 0))],
+        ["Requirements Met:", str(report_data.get('requirements', {}).get('met', 0))]
+    ]
+    
+    req_summary_table = Table(req_summary_data, colWidths=[150, 300])
+    req_summary_table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    
+    content.append(req_summary_table)
+    content.append(Spacer(1, 12))
+    
+    # Detailed requirements
+    content.append(Paragraph("DETAILED REQUIREMENTS", heading_style))
+    content.append(Spacer(1, 12))
     
     for req in requirements:
-        content += f"""
-{req.get('title', 'Untitled')}
-{"=" * len(req.get('title', 'Untitled'))}
-ID: {req.get('id', 'Unknown')}
-Category: {req.get('category', 'Uncategorized')}
-Status: {req.get('status', 'Unknown')}
-Risk: {req.get('risk', 'Unknown')}
-
-Description:
-{req.get('description', 'No description provided')}
-
-"""
+        # Create a colored background based on status
+        status_color = colors.green if req.get('status') == 'met' else colors.orange if req.get('status') == 'partial' else colors.red
+        
+        # Add requirement title with ID
+        req_title = f"{req.get('title', 'Untitled')} (ID: {req.get('id', 'Unknown')})"
+        content.append(Paragraph(req_title, req_title_style))
+        
+        # Create requirement details table
+        req_details = [
+            ["Category:", req.get('category', 'Uncategorized')],
+            ["Status:", req.get('status', 'Unknown')],
+            ["Risk:", req.get('risk', 'Unknown')]
+        ]
+        
+        req_table = Table(req_details, colWidths=[100, 350])
+        req_table.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        
+        content.append(req_table)
+        content.append(Spacer(1, 6))
+        
+        # Description
+        content.append(Paragraph("<b>Description:</b>", normal_style))
+        content.append(Paragraph(req.get('description', 'No description provided'), normal_style))
+        content.append(Spacer(1, 6))
+        
+        # Recommendation (if any)
         if req.get('recommendation'):
-            content += f"""
-Recommendation:
-{req.get('recommendation')}
-
-"""
+            content.append(Paragraph("<b>Recommendation:</b>", normal_style))
+            content.append(Paragraph(req.get('recommendation'), normal_style))
+        
+        content.append(Spacer(1, 12))
     
-    return content
+    # Build the PDF
+    doc.build(content)
+    
+    # Get the PDF content
+    pdf_content = buffer.getvalue()
+    buffer.close()
+    
+    return pdf_content
 
 def generate_excel_report(report_data):
-    """Generate an Excel report from compliance data."""
-    # In a real implementation, you'd use a library like openpyxl
-    # This is a simplified text representation
-    jurisdiction = report_data.get('jurisdictionName', 'Unknown')
-    compliance_score = report_data.get('complianceScore', 0)
+    """Generate a proper Excel report from compliance data."""
+    # Create a BytesIO object to save the workbook to
+    output = io.BytesIO()
+    
+    # Create a workbook and add a worksheet
+    workbook = xlsxwriter.Workbook(output)
+    worksheet = workbook.add_worksheet("Compliance Report")
+    
+    # Add formatting
+    title_format = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center'})
+    header_format = workbook.add_format({'bold': True, 'bg_color': '#D8E4BC', 'border': 1})
+    cell_format = workbook.add_format({'border': 1})
+    met_format = workbook.add_format({'bg_color': '#C6EFCE', 'border': 1})
+    partial_format = workbook.add_format({'bg_color': '#FFEB9C', 'border': 1})
+    not_met_format = workbook.add_format({'bg_color': '#FFC7CE', 'border': 1})
+    
+    # Set column widths
+    worksheet.set_column('A:A', 10)  # ID
+    worksheet.set_column('B:B', 30)  # Title
+    worksheet.set_column('C:C', 20)  # Category
+    worksheet.set_column('D:D', 15)  # Status
+    worksheet.set_column('E:E', 15)  # Risk
+    worksheet.set_column('F:F', 40)  # Description
+    worksheet.set_column('G:G', 40)  # Recommendation
+    
+    # Write title
+    worksheet.merge_range('A1:G1', f"COMPLIANCE REPORT - {report_data.get('jurisdictionName', 'Unknown')}", title_format)
+    worksheet.merge_range('A2:G2', f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", workbook.add_format({'align': 'center'}))
+    
+    # Write summary
+    worksheet.merge_range('A4:G4', "SUMMARY", workbook.add_format({'bold': True, 'font_size': 14}))
+    worksheet.write('A5', "Compliance Score:", workbook.add_format({'bold': True}))
+    worksheet.write('B5', f"{report_data.get('complianceScore', 0)}%")
+    worksheet.write('A6', "Risk Level:", workbook.add_format({'bold': True}))
+    worksheet.write('B6', report_data.get('riskLevel', 'Unknown'))
+    worksheet.write('A7', "Status:", workbook.add_format({'bold': True}))
+    worksheet.write('B7', report_data.get('status', 'Unknown'))
+    
+    # Write requirements summary
+    worksheet.merge_range('A9:G9', "REQUIREMENTS SUMMARY", workbook.add_format({'bold': True, 'font_size': 14}))
+    worksheet.write('A10', "Total Requirements:", workbook.add_format({'bold': True}))
+    worksheet.write('B10', report_data.get('requirements', {}).get('total', 0))
+    worksheet.write('A11', "Requirements Met:", workbook.add_format({'bold': True}))
+    worksheet.write('B11', report_data.get('requirements', {}).get('met', 0))
+    
+    # Write requirements table header
+    row = 13
+    worksheet.merge_range(f'A{row}:G{row}', "DETAILED REQUIREMENTS", workbook.add_format({'bold': True, 'font_size': 14}))
+    row += 1
+    
+    # Write header row
+    headers = ["ID", "Title", "Category", "Status", "Risk", "Description", "Recommendation"]
+    for col, header in enumerate(headers):
+        worksheet.write(row, col, header, header_format)
+    
+    # Write data rows
     requirements = report_data.get('requirementsList', [])
-    
-    # Create header
-    content = f"Compliance Report - {jurisdiction}\tGenerated: {datetime.now().strftime('%Y-%m-%d')}\n"
-    content += f"Compliance Score\t{compliance_score}%\n\n"
-    
-    # Create requirements table
-    content += "ID\tTitle\tCategory\tStatus\tRisk\tDescription\tRecommendation\n"
-    
     for req in requirements:
-        content += f"{req.get('id', '')}\t{req.get('title', '')}\t{req.get('category', '')}\t"
-        content += f"{req.get('status', '')}\t{req.get('risk', '')}\t{req.get('description', '')}\t"
-        content += f"{req.get('recommendation', '')}\n"
+        row += 1
+        
+        # Determine format based on status
+        if req.get('status') == 'met':
+            format_to_use = met_format
+        elif req.get('status') == 'partial':
+            format_to_use = partial_format
+        else:
+            format_to_use = not_met_format
+        
+        # Write requirement data
+        worksheet.write(row, 0, req.get('id', ''), format_to_use)
+        worksheet.write(row, 1, req.get('title', ''), format_to_use)
+        worksheet.write(row, 2, req.get('category', ''), format_to_use)
+        worksheet.write(row, 3, req.get('status', ''), format_to_use)
+        worksheet.write(row, 4, req.get('risk', ''), format_to_use)
+        worksheet.write(row, 5, req.get('description', ''), format_to_use)
+        worksheet.write(row, 6, req.get('recommendation', ''), format_to_use)
     
-    return content
+    # Close the workbook
+    workbook.close()
+    
+    # Get the Excel content
+    excel_content = output.getvalue()
+    output.close()
+    
+    return excel_content
 
 def generate_csv_report(report_data):
-    """Generate a CSV report from compliance data."""
-    jurisdiction = report_data.get('jurisdictionName', 'Unknown')
-    compliance_score = report_data.get('complianceScore', 0)
+    """Generate a proper CSV report from compliance data."""
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write header information
+    writer.writerow(["Jurisdiction", report_data.get('jurisdictionName', 'Unknown')])
+    writer.writerow(["Generated", datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+    writer.writerow(["Compliance Score", f"{report_data.get('complianceScore', 0)}%"])
+    writer.writerow(["Risk Level", report_data.get('riskLevel', 'Unknown')])
+    writer.writerow(["Status", report_data.get('status', 'Unknown')])
+    writer.writerow([])
+    
+    # Write requirements summary
+    writer.writerow(["REQUIREMENTS SUMMARY"])
+    writer.writerow(["Total Requirements", report_data.get('requirements', {}).get('total', 0)])
+    writer.writerow(["Requirements Met", report_data.get('requirements', {}).get('met', 0)])
+    writer.writerow([])
+    
+    # Write requirements header
+    writer.writerow(["DETAILED REQUIREMENTS"])
+    writer.writerow(["ID", "Title", "Category", "Status", "Risk", "Description", "Recommendation"])
+    
+    # Write requirements data
     requirements = report_data.get('requirementsList', [])
-    
-    # Create header
-    content = f"Jurisdiction,{jurisdiction}\n"
-    content += f"Generated,{datetime.now().strftime('%Y-%m-%d')}\n"
-    content += f"Compliance Score,{compliance_score}%\n\n"
-    
-    # Create requirements table
-    content += "ID,Title,Category,Status,Risk,Description,Recommendation\n"
-    
     for req in requirements:
-        # Escape quotes and commas in fields
-        description = req.get('description', '').replace('"', '""')
-        recommendation = req.get('recommendation', '').replace('"', '""')
-        title = req.get('title', '').replace('"', '""')
-        
-        content += f"{req.get('id', '')},\"{title}\",{req.get('category', '')},{req.get('status', '')},"
-        content += f"{req.get('risk', '')},\"{description}\",\"{recommendation}\"\n"
+        writer.writerow([
+            req.get('id', ''),
+            req.get('title', ''),
+            req.get('category', ''),
+            req.get('status', ''),
+            req.get('risk', ''),
+            req.get('description', ''),
+            req.get('recommendation', '')
+        ])
     
-    return content
+    # Get the CSV content
+    csv_content = output.getvalue().encode('utf-8')
+    output.close()
+    
+    return csv_content
+
+def generate_regulatory_pdf(document_content, jurisdiction):
+    """Generate a proper PDF document for regulatory content using ReportLab."""
+    # Create a PDF in memory
+    buffer = io.BytesIO()
+    
+    # Create the PDF document using ReportLab
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = styles['Title']
+    heading_style = styles['Heading1']
+    subheading_style = styles['Heading2']
+    normal_style = styles['Normal']
+    
+    # Build the document content
+    content = []
+    
+    # Add title
+    content.append(Paragraph("REGULATORY REFERENCE DOCUMENT", title_style))
+    content.append(Spacer(1, 12))
+    
+    # Add jurisdiction and date
+    content.append(Paragraph(f"Jurisdiction: {get_jurisdiction_name(jurisdiction)}", subheading_style))
+    content.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
+    content.append(Spacer(1, 12))
+    
+    # Parse and format the document content
+    lines = document_content.split('\n')
+    current_section = None
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Check if it's a heading (all caps or ending with colon)
+        if line.isupper() or (len(line) > 20 and line.endswith(':')):
+            current_section = line
+            content.append(Paragraph(line, heading_style))
+            content.append(Spacer(1, 6))
+        elif line.startswith('#') or line.startswith('##'):
+            # Markdown style heading
+            heading_level = line.count('#')
+            heading_text = line.lstrip('#').strip()
+            if heading_level == 1:
+                content.append(Paragraph(heading_text, heading_style))
+            else:
+                content.append(Paragraph(heading_text, subheading_style))
+            content.append(Spacer(1, 6))
+        else:
+            content.append(Paragraph(line, normal_style))
+            content.append(Spacer(1, 3))
+    
+    # Build the PDF
+    doc.build(content)
+    
+    # Get the PDF content
+    pdf_content = buffer.getvalue()
+    buffer.close()
+    
+    return pdf_content
 
 def get_regulatory_document(api_key, jurisdiction, doc_type, company_profile):
     """Generate a regulatory reference document using Perplexity."""
@@ -416,104 +650,7 @@ def get_compliance_from_perplexity(api_key: str, company_profile: Dict[str, Any]
     Returns:
         Dict containing compliance analysis
     """
-    # Create a prompt for the Perplexity API
-    prompt = f"""
-    I need a compliance analysis for a {company_profile.get('companySize', '')} company in the {company_profile.get('industry', '')} industry 
-    operating in {jurisdiction}. The company description is: {company_profile.get('description', 'No description provided')}.
-    
-    Please provide a detailed compliance analysis with the following structure:
-    1. A list of 5-8 key compliance requirements for this company in this jurisdiction
-    2. For each requirement, provide:
-       - A unique ID (like "req1", "req2", etc.)
-       - A short title
-       - A brief description
-       - A category (e.g., Data Protection, Financial Reporting, etc.)
-       - Status: whether this type of company would typically meet this requirement ("met", "partial", or "not-met")
-       - Risk level if not met ("high", "medium", or "low")
-       - A recommendation if the requirement is not fully met
-    3. An overall compliance score (0-100)
-    4. Overall risk level (high, medium, or low)
-    5. Overall compliance status (compliant, partial, or non-compliant)
-    
-    Format your response as a JSON object with the following structure:
-    {{
-       "requirements": [
-        {{
-           "id": "req1",
-           "title": "Requirement Title",
-           "description": "Brief description of the requirement",
-           "category": "Category Name",
-           "status": "met|partial|not-met",
-           "risk": "high|medium|low",
-           "recommendation": "Recommendation if not met",
-           "isMet": true|false
-        }},
-        ...more requirements...
-       ],
-       "complianceScore": 75,
-       "riskLevel": "medium",
-       "status": "partial"
-    }}
-    
-    Respond ONLY with the JSON object, no other text.
-    """
-    
-    # Set a consistent seed value to get more consistent results
-    seed_value = hash(f"{jurisdiction}_{company_profile.get('companyName', '')}_{company_profile.get('industry', '')}") % 10000
-    
-    # Call the Perplexity API
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "llama-3.1-sonar-small-128k-online",
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are a compliance expert specializing in financial regulations. Provide only JSON responses with no additional text."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "temperature": 0.1,  # Lower temperature for more consistent results
-        "max_tokens": 2000,
-        "random_seed": seed_value  # Add seed for consistency
-    }
-    
-    response = requests.post(
-        "https://api.perplexity.ai/chat/completions", 
-        headers=headers, 
-        json=payload
-    )
-    
-    if response.status_code != 200:
-        raise Exception(f"Perplexity API error: {response.text}")
-    
-    result = response.json()
-    
-    # Extract the JSON part from the response
-    response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "{}")
-    
-    # Clean up the response to handle potential formatting issues
-    response_text = response_text.strip()
-    
-    # If the response starts with a code block, remove it
-    if response_text.startswith("```json"):
-        response_text = response_text[7:]
-    if response_text.endswith("```"):
-        response_text = response_text[:-3]
-    
-    response_text = response_text.strip()
-    
-    # Parse the JSON response
-    try:
-        return json.loads(response_text)
-    except json.JSONDecodeError:
-        raise Exception("Failed to parse Perplexity response as JSON")
+    # ... keep existing code (API call function)
 
 def format_compliance_response(compliance_data: Dict[str, Any], jurisdiction: str) -> Dict[str, Any]:
     """
@@ -526,66 +663,15 @@ def format_compliance_response(compliance_data: Dict[str, Any], jurisdiction: st
     Returns:
         Formatted compliance response
     """
-    # Add missing ID fields to requirements if needed
-    requirements_list = compliance_data.get("requirements", [])
-    for i, req in enumerate(requirements_list):
-        if "id" not in req:
-            req["id"] = f"req{i+1}"
-    
-    # Count the number of met requirements
-    met_count = sum(1 for req in requirements_list if req.get("isMet", False))
-    total_count = len(requirements_list)
-    
-    # Get jurisdiction name
-    jurisdiction_name = get_jurisdiction_name(jurisdiction)
-    
-    # Format the response
-    return {
-        "jurisdictionId": jurisdiction,
-        "jurisdictionName": jurisdiction_name,
-        "flag": get_jurisdiction_flag(jurisdiction),
-        "complianceScore": compliance_data.get("complianceScore", 0),
-        "status": compliance_data.get("status", "non-compliant"),
-        "riskLevel": compliance_data.get("riskLevel", "high"),
-        "requirements": {
-            "total": total_count,
-            "met": met_count
-        },
-        "requirementsList": requirements_list,
-        "recentChanges": 0  # Default to 0
-    }
+    # ... keep existing code (formatting function)
 
 def get_jurisdiction_name(jurisdiction_id: str) -> str:
     """Get the name of a jurisdiction from its ID."""
-    jurisdiction_map = {
-        "us": "United States",
-        "eu": "European Union",
-        "uk": "United Kingdom",
-        "sg": "Singapore",
-        "au": "Australia",
-        "ca": "Canada",
-        "ch": "Switzerland",
-        "hk": "Hong Kong",
-        "jp": "Japan",
-        "br": "Brazil"
-    }
-    return jurisdiction_map.get(jurisdiction_id, jurisdiction_id)
+    # ... keep existing code (jurisdiction name function)
 
 def get_jurisdiction_flag(jurisdiction_id: str) -> str:
     """Get the flag emoji for a jurisdiction."""
-    flag_map = {
-        "us": "🇺🇸",
-        "eu": "🇪🇺",
-        "uk": "🇬🇧",
-        "sg": "🇸🇬",
-        "au": "🇦🇺",
-        "ca": "🇨🇦",
-        "ch": "🇨🇭",
-        "hk": "🇭🇰",
-        "jp": "🇯🇵",
-        "br": "🇧🇷"
-    }
-    return flag_map.get(jurisdiction_id, "🌐")
+    # ... keep existing code (flag function)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
