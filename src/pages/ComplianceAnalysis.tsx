@@ -13,7 +13,7 @@ import { getPerplexityApiKey, hasPerplexityApiKey } from '@/utils/apiKeys';
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { AlertTriangle, BookOpen, CheckSquare, Clock, Download, FileText, InfoIcon, LineChart, RefreshCw } from 'lucide-react';
-import { analyzeComplianceWithPython, checkPythonBackendHealth, ComplianceStatus, ComplianceLevel, Requirement } from '../services/ComplianceService';
+import { analyzeComplianceWithPython, checkPythonBackendHealth, ComplianceStatus, ComplianceLevel, Requirement, exportComplianceReport, exportRegulatoryDocument } from '../services/ComplianceService';
 
 interface JurisdictionData {
   jurisdictionId: string;
@@ -212,6 +212,100 @@ const ComplianceAnalysis: React.FC = () => {
     }
   };
 
+  const handleExportAnalysis = async (format: 'pdf' | 'excel' | 'csv' = 'pdf') => {
+    if (!selectedData) {
+      toast({
+        title: "No jurisdiction selected",
+        description: "Please select a jurisdiction to export analysis.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      setIsAnalyzing(true);
+      
+      toast({
+        title: "Generating report",
+        description: "Please wait while we generate your report...",
+      });
+      
+      const blob = await exportComplianceReport(selectedData, format);
+      
+      const url = window.URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `compliance_report_${selectedData.jurisdictionId}_${format}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Report generated",
+        description: "Your report has been downloaded successfully.",
+      });
+    } catch (error) {
+      console.error("Error exporting report:", error);
+      toast({
+        title: "Export failed",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleExportRegulatoryDocument = async (docType: 'full' | 'summary' | 'guidance' = 'full') => {
+    if (!selectedData) {
+      toast({
+        title: "No jurisdiction selected",
+        description: "Please select a jurisdiction to export regulatory document.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      setIsAnalyzing(true);
+      
+      toast({
+        title: "Generating document",
+        description: "Please wait while we generate your regulatory document...",
+      });
+      
+      const blob = await exportRegulatoryDocument(selectedData.jurisdictionId, docType);
+      
+      const url = window.URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `regulatory_document_${selectedData.jurisdictionId}_${docType}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Document generated",
+        description: "Your regulatory document has been downloaded successfully.",
+      });
+    } catch (error) {
+      console.error("Error exporting regulatory document:", error);
+      toast({
+        title: "Export failed",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const selectedData = selectedJurisdiction
     ? jurisdictionsData.find(j => j.jurisdictionId === selectedJurisdiction)
     : null;
@@ -361,7 +455,12 @@ const ComplianceAnalysis: React.FC = () => {
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold">Jurisdictions</h2>
-                <Button variant="outline" size="sm">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => handleExportAnalysis('pdf')}
+                  disabled={!selectedJurisdiction}
+                >
                   <Download className="mr-2 h-4 w-4" />
                   Export Analysis
                 </Button>
@@ -566,17 +665,22 @@ const ComplianceAnalysis: React.FC = () => {
                           <div className="p-2 rounded-full mr-3 bg-primary/10">
                             <BookOpen className="h-4 w-4 text-primary" />
                           </div>
-                          <div>
+                          <div className="flex-1">
                             <h4 className="font-medium text-sm">
                               {selectedData.jurisdictionName} Financial Regulation Document {i}
                             </h4>
                             <p className="text-xs text-muted-foreground mt-1">
                               Official regulatory documentation for financial operations in {selectedData.jurisdictionName}
                             </p>
-                            <div className="mt-2">
-                              <Button variant="link" size="sm" className="h-auto p-0 text-primary">
-                                <FileText className="h-3 w-3 mr-1" />
-                                View Document
+                            <div className="mt-2 flex gap-2">
+                              <Button 
+                                variant="link" 
+                                size="sm" 
+                                className="h-auto p-0 text-primary"
+                                onClick={() => handleExportRegulatoryDocument(i === 1 ? 'full' : i === 2 ? 'summary' : 'guidance')}
+                              >
+                                <Download className="h-3 w-3 mr-1" />
+                                Download Document
                               </Button>
                             </div>
                           </div>
@@ -595,6 +699,3 @@ const ComplianceAnalysis: React.FC = () => {
 };
 
 export default ComplianceAnalysis;
-
-
-
