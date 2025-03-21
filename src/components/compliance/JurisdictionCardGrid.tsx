@@ -2,15 +2,15 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
-import ComplianceCard from '../ComplianceCard';
+import ComplianceCard, { ComplianceStatus, ComplianceLevel } from '../ComplianceCard';
 
 interface JurisdictionData {
   jurisdictionId: string;
   jurisdictionName: string;
   flag?: string;
   complianceScore: number;
-  status: string;
-  riskLevel: string;
+  status: ComplianceStatus;  // Updated to use the specific type
+  riskLevel: ComplianceLevel;  // Updated to use the specific type
   requirements: {
     total: number;
     met: number;
