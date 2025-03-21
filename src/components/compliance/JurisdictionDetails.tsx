@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -6,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import StatusChart from '../StatusChart';
 import { BookOpen, CheckSquare, Clock, Download, AlertTriangle } from 'lucide-react';
 import { ComplianceStatus, ComplianceLevel } from '../ComplianceCard';
-import { RequirementStatus, RiskLevel } from '../services/ComplianceService';
+import { RequirementStatus, RiskLevel } from '../../services/ComplianceService';
 
 interface Requirement {
   id: string;
@@ -116,7 +115,6 @@ const JurisdictionDetails: React.FC<JurisdictionDetailsProps> = ({
   );
 };
 
-// Extract the requirements card as a separate component
 const RequirementsCard: React.FC<{ requirementsList: Requirement[] }> = ({ requirementsList }) => {
   return (
     <Card>
@@ -161,7 +159,6 @@ const RequirementsCard: React.FC<{ requirementsList: Requirement[] }> = ({ requi
   );
 };
 
-// Extract the requirement item as a separate component
 const RequirementItem: React.FC<{ requirement: Requirement }> = ({ requirement: req }) => {
   return (
     <div 
