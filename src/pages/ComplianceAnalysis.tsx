@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -9,10 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { jurisdictions } from '../components/JurisdictionSelect';
 import { useAuth } from '../contexts/AuthContext';
-import { getPerplexityApiKey, hasPerplexityApiKey } from '@/utils/apiKeys';
+import { hasPerplexityApiKey } from '@/utils/apiKeys';
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertTriangle, BookOpen, CheckSquare, Clock, Download, FileText, InfoIcon, LineChart, RefreshCw } from 'lucide-react';
+import { AlertTriangle, BookOpen, CheckSquare, Clock, Download, InfoIcon, LineChart, RefreshCw } from 'lucide-react';
 import { analyzeComplianceWithPython, checkPythonBackendHealth, ComplianceStatus, ComplianceLevel, Requirement, exportComplianceReport, exportRegulatoryDocument } from '../services/ComplianceService';
 
 interface JurisdictionData {
@@ -111,7 +112,20 @@ const ComplianceAnalysis: React.FC = () => {
       
       const analysisResults: JurisdictionData[] = [];
       
-      for (const jurisdictionId of companyProfileData.currentJurisdictions) {
+      // Filter out null or undefined jurisdictions
+      const validJurisdictions = companyProfileData.currentJurisdictions.filter(j => j);
+      
+      if (validJurisdictions.length === 0) {
+        toast({
+          title: "No Valid Jurisdictions",
+          description: "Please select at least one jurisdiction in your company profile.",
+          variant: "destructive",
+        });
+        setIsAnalyzing(false);
+        return;
+      }
+      
+      for (const jurisdictionId of validJurisdictions) {
         console.log(`Analyzing jurisdiction: ${jurisdictionId}`);
         
         try {
