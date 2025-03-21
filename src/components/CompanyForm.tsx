@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +36,23 @@ const CompanyForm: React.FC = () => {
   
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  useEffect(() => {
+    const savedProfile = localStorage.getItem('companyProfile');
+    if (savedProfile) {
+      try {
+        const profile = JSON.parse(savedProfile);
+        setCompanyName(profile.companyName || '');
+        setCompanySize(profile.companySize || '');
+        setIndustry(profile.industry || '');
+        setDescription(profile.description || '');
+        setCurrentJurisdictions(profile.currentJurisdictions || []);
+        setTargetJurisdictions(profile.targetJurisdictions || []);
+      } catch (error) {
+        console.error('Error parsing saved profile:', error);
+      }
+    }
+  }, []);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -94,6 +111,8 @@ const CompanyForm: React.FC = () => {
         targetJurisdictions,
         files: files.map(file => file.name),
       };
+      
+      console.log('Saving company profile:', companyProfile);
       
       // Store in localStorage for this demo
       localStorage.setItem('companyProfile', JSON.stringify(companyProfile));

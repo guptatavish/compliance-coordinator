@@ -86,6 +86,7 @@ export const analyzeComplianceWithPython = async (
       throw new Error('Python backend is not running or not accessible');
     }
     
+    console.log('Sending analysis request with company profile:', companyProfile);
     console.log(`Sending request to Python backend at ${PYTHON_API_URL}/analyze-compliance`);
     
     const response = await fetch(`${PYTHON_API_URL}/analyze-compliance`, {
