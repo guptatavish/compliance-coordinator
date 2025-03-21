@@ -43,6 +43,7 @@ export interface CompanyProfile {
 }
 
 export type ReportFormat = 'pdf' | 'excel' | 'csv';
+export type RegulatoryDocType = 'full' | 'summary' | 'guidance';
 
 /**
  * Checks if the Python backend is running
@@ -164,6 +165,62 @@ export const exportComplianceReport = async (
     return blob;
   } catch (error) {
     console.error('Error exporting report:', error);
+    throw error;
+  }
+};
+
+/**
+ * Export regulatory reference document
+ */
+export const exportRegulatoryDocument = async (
+  jurisdiction: string,
+  docType: RegulatoryDocType = 'full'
+): Promise<Blob> => {
+  try {
+    // First check if the Python backend is running
+    const isBackendHealthy = await checkPythonBackendHealth();
+    if (!isBackendHealthy) {
+      throw new Error('Python backend is not running or not accessible');
+    }
+    
+    // Get company profile for context
+    const companyProfileStr = localStorage.getItem('companyProfile');
+    if (!companyProfileStr) {
+      throw new Error('Company profile not found');
+    }
+    
+    const companyProfile = JSON.parse(companyProfileStr) as CompanyProfile;
+    const perplexityApiKey = getPerplexityApiKey();
+    
+    if (!perplexityApiKey) {
+      throw new Error('Perplexity API key not found');
+    }
+    
+    console.log(`Sending request to Python backend at ${PYTHON_API_URL}/export-regulatory-doc`);
+    
+    const response = await fetch(`${PYTHON_API_URL}/export-regulatory-doc`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        apiKey: perplexityApiKey,
+        jurisdiction,
+        docType,
+        companyProfile
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Export failed: ${response.status} - ${errorText}`);
+    }
+    
+    // Get the file blob
+    const blob = await response.blob();
+    return blob;
+  } catch (error) {
+    console.error('Error exporting regulatory document:', error);
     throw error;
   }
 };

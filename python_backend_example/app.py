@@ -34,6 +34,7 @@ CORS(app)  # Enable CORS for all routes
 
 # Store analysis results in memory (in a real app, this would be in a database)
 stored_analysis_results = {}
+document_cache = {}
 
 # Routes
 @app.route('/health', methods=['GET'])
@@ -118,7 +119,7 @@ def export_report(format):
         if format == 'pdf':
             # Create a simple placeholder PDF report
             # In a real implementation, you'd use a PDF generation library
-            report_content = f"ComplianceSync Report\n\nJurisdiction: {report_data.get('jurisdictionName', 'Unknown')}\nDate: {datetime.now().strftime('%Y-%m-%d')}\nCompliance Score: {report_data.get('complianceScore', '0')}%"
+            report_content = generate_pdf_report(report_data)
             
             # Convert text to bytes for serving as a file
             bytes_io = io.BytesIO(report_content.encode('utf-8'))
@@ -132,7 +133,7 @@ def export_report(format):
             
         elif format == 'excel':
             # In a real implementation, you'd use an Excel generation library
-            report_content = f"ComplianceSync Report\n\nJurisdiction: {report_data.get('jurisdictionName', 'Unknown')}\nDate: {datetime.now().strftime('%Y-%m-%d')}\nCompliance Score: {report_data.get('complianceScore', '0')}%"
+            report_content = generate_excel_report(report_data)
             
             # Convert text to bytes for serving as a file
             bytes_io = io.BytesIO(report_content.encode('utf-8'))
@@ -146,7 +147,7 @@ def export_report(format):
             
         elif format == 'csv':
             # In a real implementation, you'd use a CSV generation library
-            report_content = f"Jurisdiction,Date,Compliance Score\n{report_data.get('jurisdictionName', 'Unknown')},{datetime.now().strftime('%Y-%m-%d')},{report_data.get('complianceScore', '0')}%"
+            report_content = generate_csv_report(report_data)
             
             # Convert text to bytes for serving as a file
             bytes_io = io.BytesIO(report_content.encode('utf-8'))
@@ -164,6 +165,244 @@ def export_report(format):
     except Exception as e:
         print(f"Error exporting report: {str(e)}")
         return jsonify({"error": f"Failed to export report: {str(e)}"}), 500
+
+@app.route('/export-regulatory-doc', methods=['POST'])
+def export_regulatory_doc():
+    """
+    Export a regulatory reference document.
+    
+    Expects a JSON payload with:
+    - apiKey: Perplexity API key
+    - jurisdiction: Jurisdiction to get regulations for
+    - docType: Type of document ('full', 'summary', 'guidance')
+    - companyProfile: Company profile data for context
+    """
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+            
+        api_key = data.get('apiKey')
+        jurisdiction = data.get('jurisdiction')
+        doc_type = data.get('docType', 'full')
+        company_profile = data.get('companyProfile')
+        
+        if not api_key or not jurisdiction or not company_profile:
+            return jsonify({"error": "Missing required fields"}), 400
+        
+        # Generate a cache key for this document request
+        cache_key = f"reg_doc_{jurisdiction}_{doc_type}_{company_profile.get('industry', '')}"
+        
+        # Check if we have a cached document (valid for 24 hours)
+        current_time = time.time()
+        if cache_key in document_cache and (current_time - document_cache[cache_key]['timestamp'] < 86400):
+            print(f"Using cached regulatory document for {cache_key}")
+            document_content = document_cache[cache_key]['content']
+        else:
+            # Get regulatory document from Perplexity API
+            document_content = get_regulatory_document(api_key, jurisdiction, doc_type, company_profile)
+            
+            # Store in cache
+            document_cache[cache_key] = {
+                'timestamp': current_time,
+                'content': document_content
+            }
+        
+        # Convert text to bytes for serving as a file
+        bytes_io = io.BytesIO(document_content.encode('utf-8'))
+        
+        return send_file(
+            bytes_io,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f"regulatory_reference_{jurisdiction}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        )
+            
+    except Exception as e:
+        print(f"Error exporting regulatory document: {str(e)}")
+        return jsonify({"error": f"Failed to export regulatory document: {str(e)}"}), 500
+
+def generate_pdf_report(report_data):
+    """Generate a PDF report from compliance data."""
+    jurisdiction = report_data.get('jurisdictionName', 'Unknown')
+    compliance_score = report_data.get('complianceScore', 0)
+    risk_level = report_data.get('riskLevel', 'Unknown')
+    status = report_data.get('status', 'Unknown')
+    requirements = report_data.get('requirementsList', [])
+    
+    # Create a text-based representation of the PDF (in a real app, use a PDF library)
+    content = f"""
+COMPLIANCE ANALYSIS REPORT
+==========================
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+JURISDICTION: {jurisdiction}
+
+SUMMARY
+-------
+Compliance Score: {compliance_score}%
+Risk Level: {risk_level}
+Status: {status}
+
+REQUIREMENTS SUMMARY
+-------------------
+Total Requirements: {report_data.get('requirements', {}).get('total', 0)}
+Requirements Met: {report_data.get('requirements', {}).get('met', 0)}
+
+DETAILED REQUIREMENTS
+--------------------
+"""
+    
+    for req in requirements:
+        content += f"""
+{req.get('title', 'Untitled')}
+{"=" * len(req.get('title', 'Untitled'))}
+ID: {req.get('id', 'Unknown')}
+Category: {req.get('category', 'Uncategorized')}
+Status: {req.get('status', 'Unknown')}
+Risk: {req.get('risk', 'Unknown')}
+
+Description:
+{req.get('description', 'No description provided')}
+
+"""
+        if req.get('recommendation'):
+            content += f"""
+Recommendation:
+{req.get('recommendation')}
+
+"""
+    
+    return content
+
+def generate_excel_report(report_data):
+    """Generate an Excel report from compliance data."""
+    # In a real implementation, you'd use a library like openpyxl
+    # This is a simplified text representation
+    jurisdiction = report_data.get('jurisdictionName', 'Unknown')
+    compliance_score = report_data.get('complianceScore', 0)
+    requirements = report_data.get('requirementsList', [])
+    
+    # Create header
+    content = f"Compliance Report - {jurisdiction}\tGenerated: {datetime.now().strftime('%Y-%m-%d')}\n"
+    content += f"Compliance Score\t{compliance_score}%\n\n"
+    
+    # Create requirements table
+    content += "ID\tTitle\tCategory\tStatus\tRisk\tDescription\tRecommendation\n"
+    
+    for req in requirements:
+        content += f"{req.get('id', '')}\t{req.get('title', '')}\t{req.get('category', '')}\t"
+        content += f"{req.get('status', '')}\t{req.get('risk', '')}\t{req.get('description', '')}\t"
+        content += f"{req.get('recommendation', '')}\n"
+    
+    return content
+
+def generate_csv_report(report_data):
+    """Generate a CSV report from compliance data."""
+    jurisdiction = report_data.get('jurisdictionName', 'Unknown')
+    compliance_score = report_data.get('complianceScore', 0)
+    requirements = report_data.get('requirementsList', [])
+    
+    # Create header
+    content = f"Jurisdiction,{jurisdiction}\n"
+    content += f"Generated,{datetime.now().strftime('%Y-%m-%d')}\n"
+    content += f"Compliance Score,{compliance_score}%\n\n"
+    
+    # Create requirements table
+    content += "ID,Title,Category,Status,Risk,Description,Recommendation\n"
+    
+    for req in requirements:
+        # Escape quotes and commas in fields
+        description = req.get('description', '').replace('"', '""')
+        recommendation = req.get('recommendation', '').replace('"', '""')
+        title = req.get('title', '').replace('"', '""')
+        
+        content += f"{req.get('id', '')},\"{title}\",{req.get('category', '')},{req.get('status', '')},"
+        content += f"{req.get('risk', '')},\"{description}\",\"{recommendation}\"\n"
+    
+    return content
+
+def get_regulatory_document(api_key, jurisdiction, doc_type, company_profile):
+    """Generate a regulatory reference document using Perplexity."""
+    # Create a prompt for the Perplexity API
+    prompt = f"""
+    Create a detailed regulatory reference document for a {company_profile.get('companySize', '')} company in the {company_profile.get('industry', '')} industry 
+    operating in {jurisdiction}. This document should serve as a comprehensive reference guide for regulatory compliance.
+    
+    The document should be focused on the type: {doc_type} (full regulations, summary, or compliance guidance).
+    
+    Please structure the document with the following sections:
+    
+    1. Executive Summary
+    2. Regulatory Framework Overview
+    3. Key Regulatory Bodies
+    4. Primary Regulations and Standards
+    5. Compliance Requirements
+       - Include specific regulations with reference numbers where applicable
+       - Note deadlines and reporting requirements
+    6. Common Compliance Challenges
+    7. Recommended Compliance Strategies
+    8. Resources and References
+    
+    Make the document specific to {company_profile.get('industry', '')} in {jurisdiction} and include as much specific regulatory information as possible including actual regulation names, articles, and compliance deadlines.
+    
+    Format the response as a well-structured document suitable for a professional audience.
+    """
+    
+    # Set a consistent seed value
+    seed_value = hash(f"reg_doc_{jurisdiction}_{doc_type}_{company_profile.get('industry', '')}") % 10000
+    
+    # Call the Perplexity API
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "llama-3.1-sonar-small-128k-online",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a regulatory compliance expert specializing in creating accurate, detailed regulatory reference documents. Your responses should be well-structured, comprehensive, and include specific regulatory details."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.2,  # Lower temperature for more factual and consistent results
+        "max_tokens": 4000,
+        "random_seed": seed_value
+    }
+    
+    response = requests.post(
+        "https://api.perplexity.ai/chat/completions", 
+        headers=headers, 
+        json=payload
+    )
+    
+    if response.status_code != 200:
+        raise Exception(f"Perplexity API error: {response.text}")
+    
+    result = response.json()
+    
+    # Extract the content from the response
+    document_content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+    
+    # Format as a document
+    formatted_document = f"""
+REGULATORY REFERENCE DOCUMENT
+============================
+Jurisdiction: {jurisdiction}
+Industry: {company_profile.get('industry', 'Not specified')}
+Document Type: {doc_type}
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+{document_content}
+    """
+    
+    return formatted_document
 
 def get_compliance_from_perplexity(api_key: str, company_profile: Dict[str, Any], jurisdiction: str) -> Dict[str, Any]:
     """
