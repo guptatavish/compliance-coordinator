@@ -1,6 +1,5 @@
+
 import { getPerplexityApiKey, PYTHON_API_URL } from "../utils/apiKeys";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
 
 export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
 export type ComplianceLevel = 'high' | 'medium' | 'low';
@@ -63,71 +62,19 @@ export const checkPythonBackendHealth = async (): Promise<boolean> => {
 };
 
 /**
- * Get company profile from Supabase
- */
-export const getCompanyProfile = async (): Promise<CompanyProfile | null> => {
-  try {
-    // First try to get from Supabase
-    const { data, error } = await supabase
-      .from('company_profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    
-    if (error) {
-      console.error('Error fetching company profile from Supabase:', error);
-      // Fall back to localStorage temporarily until migration is complete
-      const profileStr = localStorage.getItem('companyProfile');
-      if (profileStr) {
-        return JSON.parse(profileStr) as CompanyProfile;
-      }
-      return null;
-    }
-    
-    if (data) {
-      // Convert from DB schema to application schema
-      return {
-        companyName: data.company_name,
-        companySize: data.company_size,
-        industry: data.industry,
-        description: data.description || '',
-        currentJurisdictions: data.current_jurisdictions || [],
-        targetJurisdictions: data.target_jurisdictions || []
-      };
-    }
-    
-    // Fall back to localStorage temporarily until migration is complete
-    const profileStr = localStorage.getItem('companyProfile');
-    if (profileStr) {
-      return JSON.parse(profileStr) as CompanyProfile;
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('Error getting company profile:', error);
-    return null;
-  }
-};
-
-/**
  * Analyzes company compliance based on company profile and jurisdiction
  */
 export const analyzeComplianceWithPython = async (
   jurisdiction: string
 ): Promise<ComplianceResult> => {
   try {
-    // Validate jurisdiction input
-    if (!jurisdiction) {
-      throw new Error('Invalid jurisdiction: jurisdiction cannot be null or empty');
-    }
-    
-    // Get company profile from Supabase
-    const companyProfile = await getCompanyProfile();
-    if (!companyProfile) {
+    // Get company profile from localStorage
+    const companyProfileStr = localStorage.getItem('companyProfile');
+    if (!companyProfileStr) {
       throw new Error('Company profile not found');
     }
     
+    const companyProfile = JSON.parse(companyProfileStr) as CompanyProfile;
     const perplexityApiKey = getPerplexityApiKey();
     
     if (!perplexityApiKey) {
@@ -153,8 +100,6 @@ export const analyzeComplianceWithPython = async (
         companyProfile,
         jurisdiction
       }),
-      // Add timeout to prevent hanging requests
-      signal: AbortSignal.timeout(30000) // 30 second timeout
     });
     
     if (!response.ok) {
@@ -164,216 +109,25 @@ export const analyzeComplianceWithPython = async (
     
     const result = await response.json();
     console.log('Received compliance data from Python backend:', result);
-    
-    // Enhanced validation of the result structure
-    if (!result) {
-      throw new Error('Empty response from Python backend');
-    }
-    
-    if (typeof result !== 'object') {
-      throw new Error(`Invalid response type: expected object, got ${typeof result}`);
-    }
-    
-    // Validate and normalize essential fields
-    const normalizedResult: ComplianceResult = {
-      jurisdictionId: result.jurisdictionId || jurisdiction,
-      jurisdictionName: result.jurisdictionName || getJurisdictionName(jurisdiction),
-      flag: result.flag || getJurisdictionFlag(jurisdiction),
-      complianceScore: typeof result.complianceScore === 'number' ? result.complianceScore : 0,
-      status: validateComplianceStatus(result.status),
-      riskLevel: validateComplianceLevel(result.riskLevel),
-      requirements: {
-        total: typeof result.requirements?.total === 'number' ? result.requirements.total : 0,
-        met: typeof result.requirements?.met === 'number' ? result.requirements.met : 0,
-      },
-      requirementsList: Array.isArray(result.requirementsList) 
-        ? result.requirementsList.map(normalizeRequirement)
-        : [],
-    };
-    
-    // Store the analysis result in Supabase
-    try {
-      // Get the company profile ID
-      const { data: profileData } = await supabase
-        .from('company_profiles')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (profileData) {
-        // Insert the analysis into the database
-        const { data: analysisData, error: analysisError } = await supabase
-          .from('compliance_analysis')
-          .insert([{
-            company_profile_id: profileData.id,
-            jurisdiction_id: normalizedResult.jurisdictionId,
-            jurisdiction_name: normalizedResult.jurisdictionName,
-            compliance_score: normalizedResult.complianceScore,
-            status: normalizedResult.status,
-            risk_level: normalizedResult.riskLevel
-          }])
-          .select();
-        
-        if (analysisError) {
-          console.error('Error storing compliance analysis:', analysisError);
-        } else if (analysisData && analysisData.length > 0) {
-          // Store the requirements
-          const analysisId = analysisData[0].id;
-          const requirementsToInsert = normalizedResult.requirementsList.map(req => ({
-            analysis_id: analysisId,
-            title: req.title,
-            description: req.description,
-            status: req.status,
-            category: req.category,
-            risk: req.risk,
-            recommendation: req.recommendation
-          }));
-          
-          const { error: reqError } = await supabase
-            .from('compliance_requirements')
-            .insert(requirementsToInsert);
-          
-          if (reqError) {
-            console.error('Error storing compliance requirements:', reqError);
-          }
-        }
-      }
-    } catch (dbError) {
-      console.error('Error storing analysis in database:', dbError);
-      // Continue without failing since this is just for persistence
-    }
-    
-    return normalizedResult;
-  } catch (error: any) {
+    return result;
+  } catch (error) {
     console.error('Error analyzing compliance:', error);
-    
-    // Rethrow with a clear message for the UI
-    throw new Error(`Compliance analysis failed: ${error.message || "Unknown error"}`);
+    // Return fallback data with error indication
+    return {
+      jurisdictionId: jurisdiction,
+      jurisdictionName: getJurisdictionName(jurisdiction),
+      complianceScore: 0,
+      status: 'non-compliant' as ComplianceStatus,
+      riskLevel: 'high' as ComplianceLevel,
+      requirements: {
+        total: 0,
+        met: 0,
+      },
+      requirementsList: [],
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
   }
 };
-
-/**
- * Validates and normalizes a compliance status value
- */
-function validateComplianceStatus(status: any): ComplianceStatus {
-  if (status === 'compliant' || status === 'partial' || status === 'non-compliant') {
-    return status;
-  }
-  
-  // Try to normalize string values that might be close
-  if (typeof status === 'string') {
-    const lowercaseStatus = status.toLowerCase();
-    if (lowercaseStatus.includes('comply') || lowercaseStatus.includes('compliant')) {
-      return 'compliant';
-    } else if (lowercaseStatus.includes('partial')) {
-      return 'partial';
-    } else if (lowercaseStatus.includes('non') || lowercaseStatus.includes('not')) {
-      return 'non-compliant';
-    }
-  }
-  
-  // Default fallback
-  return 'non-compliant';
-}
-
-/**
- * Validates and normalizes a compliance level value
- */
-function validateComplianceLevel(level: any): ComplianceLevel {
-  if (level === 'high' || level === 'medium' || level === 'low') {
-    return level;
-  }
-  
-  // Try to normalize string values that might be close
-  if (typeof level === 'string') {
-    const lowercaseLevel = level.toLowerCase();
-    if (lowercaseLevel.includes('high')) {
-      return 'high';
-    } else if (lowercaseLevel.includes('med')) {
-      return 'medium';
-    } else if (lowercaseLevel.includes('low')) {
-      return 'low';
-    }
-  }
-  
-  // Default fallback
-  return 'high';
-}
-
-/**
- * Normalizes a requirement object to ensure it has all required fields
- */
-function normalizeRequirement(req: any): Requirement {
-  if (!req || typeof req !== 'object') {
-    return {
-      id: `gen-${Math.random().toString(36).substring(2, 9)}`,
-      title: 'Unknown Requirement',
-      description: 'No description available',
-      isMet: false,
-      status: 'not-met',
-      category: 'General',
-      risk: 'high'
-    };
-  }
-  
-  return {
-    id: req.id || `gen-${Math.random().toString(36).substring(2, 9)}`,
-    title: req.title || 'Untitled Requirement',
-    description: req.description || 'No description provided',
-    isMet: !!req.isMet,
-    status: validateRequirementStatus(req.status),
-    category: req.category || 'General',
-    risk: validateRiskLevel(req.risk),
-    recommendation: req.recommendation
-  };
-}
-
-/**
- * Validates and normalizes a requirement status
- */
-function validateRequirementStatus(status: any): RequirementStatus {
-  if (status === 'met' || status === 'partial' || status === 'not-met') {
-    return status;
-  }
-  
-  // Try to normalize string values
-  if (typeof status === 'string') {
-    const lowercaseStatus = status.toLowerCase();
-    if (lowercaseStatus.includes('met') && !lowercaseStatus.includes('not')) {
-      return 'met';
-    } else if (lowercaseStatus.includes('partial')) {
-      return 'partial';
-    }
-  }
-  
-  // Default fallback
-  return 'not-met';
-}
-
-/**
- * Validates and normalizes a risk level
- */
-function validateRiskLevel(risk: any): RiskLevel {
-  if (risk === 'high' || risk === 'medium' || risk === 'low') {
-    return risk;
-  }
-  
-  // Try to normalize string values
-  if (typeof risk === 'string') {
-    const lowercaseRisk = risk.toLowerCase();
-    if (lowercaseRisk.includes('high')) {
-      return 'high';
-    } else if (lowercaseRisk.includes('med')) {
-      return 'medium';
-    } else if (lowercaseRisk.includes('low')) {
-      return 'low';
-    }
-  }
-  
-  // Default fallback
-  return 'high';
-}
 
 /**
  * Export a compliance report in the specified format
@@ -399,8 +153,6 @@ export const exportComplianceReport = async (
       body: JSON.stringify({
         data
       }),
-      // Add timeout to prevent hanging requests
-      signal: AbortSignal.timeout(30000) // 30 second timeout
     });
     
     if (!response.ok) {
@@ -410,35 +162,10 @@ export const exportComplianceReport = async (
     
     // Get the file blob
     const blob = await response.blob();
-    
-    // Store report reference in Supabase
-    try {
-      const { data: profileData } = await supabase
-        .from('company_profiles')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (profileData) {
-        await supabase
-          .from('compliance_reports')
-          .insert([{
-            company_profile_id: profileData.id,
-            jurisdiction_id: data.jurisdictionId,
-            report_type: format,
-            generated_at: new Date().toISOString()
-          }]);
-      }
-    } catch (dbError) {
-      console.error('Error storing report reference:', dbError);
-      // Continue without failing since this is just for record-keeping
-    }
-    
     return blob;
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error exporting report:', error);
-    throw new Error(`Report export failed: ${error.message || "Unknown error"}`);
+    throw error;
   }
 };
 
@@ -457,11 +184,12 @@ export const exportRegulatoryDocument = async (
     }
     
     // Get company profile for context
-    const companyProfile = await getCompanyProfile();
-    if (!companyProfile) {
+    const companyProfileStr = localStorage.getItem('companyProfile');
+    if (!companyProfileStr) {
       throw new Error('Company profile not found');
     }
     
+    const companyProfile = JSON.parse(companyProfileStr) as CompanyProfile;
     const perplexityApiKey = getPerplexityApiKey();
     
     if (!perplexityApiKey) {
@@ -481,8 +209,6 @@ export const exportRegulatoryDocument = async (
         docType,
         companyProfile
       }),
-      // Add timeout to prevent hanging requests
-      signal: AbortSignal.timeout(60000) // 60 second timeout for document generation
     });
     
     if (!response.ok) {
@@ -492,40 +218,15 @@ export const exportRegulatoryDocument = async (
     
     // Get the file blob
     const blob = await response.blob();
-    
-    // Store document reference in Supabase
-    try {
-      const { data: profileData } = await supabase
-        .from('company_profiles')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (profileData) {
-        await supabase
-          .from('regulatory_documents')
-          .insert([{
-            company_profile_id: profileData.id,
-            jurisdiction_id: jurisdiction,
-            document_type: docType,
-            generated_at: new Date().toISOString()
-          }]);
-      }
-    } catch (dbError) {
-      console.error('Error storing document reference:', dbError);
-      // Continue without failing since this is just for record-keeping
-    }
-    
     return blob;
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error exporting regulatory document:', error);
-    throw new Error(`Document export failed: ${error.message || "Unknown error"}`);
+    throw error;
   }
 };
 
 /**
- * Get a jurisdiction name from its ID
+ * Get a jurisdiction name from its ID (placeholder implementation)
  */
 function getJurisdictionName(jurisdictionId: string): string {
   const jurisdictions: Record<string, string> = {
@@ -539,20 +240,3 @@ function getJurisdictionName(jurisdictionId: string): string {
   
   return jurisdictions[jurisdictionId] || jurisdictionId;
 }
-
-/**
- * Get a flag emoji for a jurisdiction
- */
-function getJurisdictionFlag(jurisdictionId: string): string {
-  const flags: Record<string, string> = {
-    'us': '🇺🇸',
-    'eu': '🇪🇺',
-    'uk': '🇬🇧',
-    'sg': '🇸🇬',
-    'au': '🇦🇺',
-    // Add more as needed
-  };
-  
-  return flags[jurisdictionId] || '🏳️';
-}
-

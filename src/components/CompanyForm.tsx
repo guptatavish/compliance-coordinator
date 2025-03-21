@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -22,10 +21,8 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import JurisdictionSelect from './JurisdictionSelect';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, X, Building, Phone, Mail, Globe } from 'lucide-react';
+import { Upload, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
-import RoleBasedAccess from '@/utils/RoleBasedAccess';
 
 const CompanyForm: React.FC = () => {
   const [companyName, setCompanyName] = useState('');
@@ -36,63 +33,26 @@ const CompanyForm: React.FC = () => {
   const [targetJurisdictions, setTargetJurisdictions] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [profileId, setProfileId] = useState<string | null>(null);
-  
-  // Additional critical information
-  const [companyRegistrationNumber, setCompanyRegistrationNumber] = useState('');
-  const [companyAddress, setCompanyAddress] = useState('');
-  const [companyWebsite, setCompanyWebsite] = useState('');
-  const [companyPhoneNumber, setCompanyPhoneNumber] = useState('');
-  const [companyEmail, setCompanyEmail] = useState('');
-  const [foundedYear, setFoundedYear] = useState('');
-  const [businessType, setBusinessType] = useState('');
   
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user } = useAuth();
 
   useEffect(() => {
-    if (!user) return;
-    
-    const fetchCompanyProfile = async () => {
+    const savedProfile = localStorage.getItem('companyProfile');
+    if (savedProfile) {
       try {
-        const { data, error } = await supabase
-          .from('company_profiles')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        
-        if (error) {
-          console.error('Error fetching company profile:', error);
-          return;
-        }
-        
-        if (data) {
-          setProfileId(data.id);
-          setCompanyName(data.company_name || '');
-          setCompanySize(data.company_size || '');
-          setIndustry(data.industry || '');
-          setDescription(data.description || '');
-          setCurrentJurisdictions(data.current_jurisdictions || []);
-          setTargetJurisdictions(data.target_jurisdictions || []);
-          
-          // Set additional data if available
-          if (data.registration_number) setCompanyRegistrationNumber(data.registration_number);
-          if (data.address) setCompanyAddress(data.address);
-          if (data.website) setCompanyWebsite(data.website);
-          if (data.phone) setCompanyPhoneNumber(data.phone);
-          if (data.email) setCompanyEmail(data.email);
-          if (data.founded_year) setFoundedYear(data.founded_year);
-          if (data.business_type) setBusinessType(data.business_type);
-        }
+        const profile = JSON.parse(savedProfile);
+        setCompanyName(profile.companyName || '');
+        setCompanySize(profile.companySize || '');
+        setIndustry(profile.industry || '');
+        setDescription(profile.description || '');
+        setCurrentJurisdictions(profile.currentJurisdictions || []);
+        setTargetJurisdictions(profile.targetJurisdictions || []);
       } catch (error) {
-        console.error('Error fetching company profile:', error);
+        console.error('Error parsing saved profile:', error);
       }
-    };
-    
-    fetchCompanyProfile();
-  }, [user]);
+    }
+  }, []);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -114,44 +74,13 @@ const CompanyForm: React.FC = () => {
     setFiles(files.filter((_, i) => i !== index));
   };
   
-  const uploadFilesToStorage = async (): Promise<string[]> => {
-    const fileUrls: string[] = [];
-    
-    for (const file of files) {
-      try {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
-        const filePath = `company_documents/${fileName}`;
-        
-        const { data, error } = await supabase.storage
-          .from('documents')
-          .upload(filePath, file);
-        
-        if (error) {
-          console.error('Error uploading file:', error);
-          continue;
-        }
-        
-        const { data: { publicUrl } } = supabase.storage
-          .from('documents')
-          .getPublicUrl(filePath);
-        
-        fileUrls.push(publicUrl);
-      } catch (error) {
-        console.error('Error uploading file:', error);
-      }
-    }
-    
-    return fileUrls;
-  };
-  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (isLoading) return;
     
-    // Validate required fields
-    if (!companyName || !companySize || !industry || !companyRegistrationNumber || !companyAddress || !companyEmail) {
+    // Basic validation
+    if (!companyName || !companySize || !industry) {
       toast({
         title: "Missing information",
         description: "Please fill in all required fields.",
@@ -172,65 +101,34 @@ const CompanyForm: React.FC = () => {
     setIsLoading(true);
     
     try {
-      const fileUrls = files.length > 0 ? await uploadFilesToStorage() : [];
-      
-      const companyProfileData = {
-        company_name: companyName,
-        company_size: companySize,
+      // Create company profile object
+      const companyProfile = {
+        companyName,
+        companySize,
         industry,
         description,
-        current_jurisdictions: currentJurisdictions,
-        target_jurisdictions: targetJurisdictions,
-        document_urls: fileUrls,
-        // Additional fields
-        registration_number: companyRegistrationNumber,
-        address: companyAddress,
-        website: companyWebsite,
-        phone: companyPhoneNumber,
-        email: companyEmail,
-        founded_year: foundedYear,
-        business_type: businessType
+        currentJurisdictions,
+        targetJurisdictions,
+        files: files.map(file => file.name),
       };
       
-      console.log('Saving company profile:', companyProfileData);
+      console.log('Saving company profile:', companyProfile);
       
-      let result;
-      if (profileId) {
-        result = await supabase
-          .from('company_profiles')
-          .update(companyProfileData)
-          .eq('id', profileId);
-      } else {
-        result = await supabase
-          .from('company_profiles')
-          .insert([companyProfileData]);
-      }
+      // Store in localStorage for this demo
+      localStorage.setItem('companyProfile', JSON.stringify(companyProfile));
       
-      if (result.error) {
-        throw result.error;
-      }
-      
-      // Update user profile with company association if this is a new company
-      if (!profileId && result.data && user) {
-        // Get the new company ID
-        const { data: newCompany } = await supabase
-          .from('company_profiles')
-          .select('id')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-          
-        if (newCompany) {
-          await supabase
-            .from('user_profiles')
-            .upsert({
-              id: user.id,
-              email: user.email || '',
-              name: user.user_metadata?.name || '',
-              role: user.user_metadata?.role || 'user',
-              company_id: newCompany.id
-            });
-        }
+      // Also save to Supabase if possible
+      try {
+        await supabase.from('company_profiles').insert([{
+          company_name: companyName,
+          company_size: companySize,
+          industry,
+          description,
+          current_jurisdictions: currentJurisdictions,
+          target_jurisdictions: targetJurisdictions
+        }]);
+      } catch (dbError) {
+        console.error("Failed to save to database, but continuing with localStorage:", dbError);
       }
       
       toast({
@@ -239,11 +137,10 @@ const CompanyForm: React.FC = () => {
       });
       
       navigate('/dashboard');
-    } catch (error: any) {
-      console.error('Error saving company profile:', error);
+    } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to save company profile: " + (error.message || "Please try again."),
+        description: "Failed to save company profile. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -272,18 +169,6 @@ const CompanyForm: React.FC = () => {
     { value: "real_estate", label: "Real Estate Finance" },
     { value: "other", label: "Other Financial Services" },
   ];
-
-  const businessTypes = [
-    { value: "corporation", label: "Corporation" },
-    { value: "llc", label: "Limited Liability Company (LLC)" },
-    { value: "partnership", label: "Partnership" },
-    { value: "sole_proprietorship", label: "Sole Proprietorship" },
-    { value: "non_profit", label: "Non-profit" },
-    { value: "other", label: "Other" },
-  ];
-
-  const currentYear = new Date().getFullYear();
-  const yearOptions = Array.from({ length: 100 }, (_, i) => currentYear - i);
 
   return (
     <Card className="w-full">
@@ -327,102 +212,6 @@ const CompanyForm: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <Label htmlFor="registration-number" className="required">Registration Number</Label>
-              <Input
-                id="registration-number"
-                value={companyRegistrationNumber}
-                onChange={(e) => setCompanyRegistrationNumber(e.target.value)}
-                placeholder="Company registration number"
-                required
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="founded-year">Founded Year</Label>
-              <Select 
-                value={foundedYear} 
-                onValueChange={setFoundedYear}
-              >
-                <SelectTrigger id="founded-year">
-                  <SelectValue placeholder="Select year founded" />
-                </SelectTrigger>
-                <SelectContent>
-                  {yearOptions.map((year) => (
-                    <SelectItem key={year} value={year.toString()}>
-                      {year}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="business-type">Business Type</Label>
-            <Select 
-              value={businessType} 
-              onValueChange={setBusinessType}
-            >
-              <SelectTrigger id="business-type">
-                <SelectValue placeholder="Select business type" />
-              </SelectTrigger>
-              <SelectContent>
-                {businessTypes.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>
-                    {type.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="address" className="required">Business Address</Label>
-            <Textarea
-              id="address"
-              value={companyAddress}
-              onChange={(e) => setCompanyAddress(e.target.value)}
-              placeholder="Enter your company's registered address"
-              required
-            />
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="required">Business Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={companyEmail}
-                onChange={(e) => setCompanyEmail(e.target.value)}
-                placeholder="contact@yourcompany.com"
-                required
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="phone">Business Phone</Label>
-              <Input
-                id="phone"
-                value={companyPhoneNumber}
-                onChange={(e) => setCompanyPhoneNumber(e.target.value)}
-                placeholder="+1 (555) 123-4567"
-              />
-            </div>
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="website">Company Website</Label>
-            <Input
-              id="website"
-              value={companyWebsite}
-              onChange={(e) => setCompanyWebsite(e.target.value)}
-              placeholder="https://www.yourcompany.com"
-            />
           </div>
           
           <div className="space-y-2">
