@@ -38,17 +38,22 @@ serve(async (req) => {
       );
     }
 
+    // Filter out null or undefined jurisdictions
+    const validJurisdictions = companyProfile.currentJurisdictions.filter(j => j);
+    
+    if (validJurisdictions.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "No valid jurisdictions provided" }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     console.log("Analyzing regulations for company:", companyProfile.companyName);
     
     const analysisResults = [];
     
     // Process each jurisdiction
-    for (const jurisdictionId of companyProfile.currentJurisdictions) {
-      if (!jurisdictionId) {
-        console.warn("Skipping null or undefined jurisdiction");
-        continue; // Skip this iteration if jurisdictionId is null or undefined
-      }
-      
+    for (const jurisdictionId of validJurisdictions) {
       console.log(`Analyzing jurisdiction: ${jurisdictionId}`);
       
       // Generate system prompt based on company profile
