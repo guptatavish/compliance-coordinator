@@ -24,6 +24,7 @@ export interface ComplianceResult {
   };
   requirementsList: Requirement[];
   recentChanges?: number;
+  error?: string; // Added optional error property
 }
 
 export interface CompanyProfile {
