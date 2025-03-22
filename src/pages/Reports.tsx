@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -29,7 +28,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,7 +36,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -45,7 +44,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -88,33 +87,28 @@ const Reports: React.FC = () => {
   const [selectedReport, setSelectedReport] = useState<GeneratedReport | null>(null);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   
-  // Check if there's a stored profile
   const hasCompanyProfile = !!localStorage.getItem('companyProfile');
   const companyProfileData = hasCompanyProfile 
     ? JSON.parse(localStorage.getItem('companyProfile')!) 
     : null;
   
-  // Check for stored compliance analysis results
   const storedAnalysisResults = localStorage.getItem('complianceAnalysisResults');
   const analysisResults = storedAnalysisResults 
     ? JSON.parse(storedAnalysisResults) as ComplianceResult[]
     : [];
   
-  // Redirect to login if not authenticated
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
     }
   }, [isAuthenticated, navigate]);
 
-  // Redirect to company profile page if no profile is set up
   useEffect(() => {
     if (isAuthenticated && !hasCompanyProfile) {
       navigate('/company-profile');
     }
   }, [isAuthenticated, hasCompanyProfile, navigate]);
 
-  // Check if Python backend is available
   useEffect(() => {
     const checkBackendHealth = async () => {
       const isHealthy = await checkPythonBackendHealth();
@@ -124,7 +118,6 @@ const Reports: React.FC = () => {
     checkBackendHealth();
   }, []);
 
-  // Sample report templates
   const reportTemplates: ReportTemplate[] = [
     {
       id: 'template-1',
@@ -168,9 +161,7 @@ const Reports: React.FC = () => {
     },
   ];
 
-  // Generated reports history - initialize with stored analysis results if available
   const [reportsHistory, setReportsHistory] = useState<GeneratedReport[]>(() => {
-    // Create initial reports from any stored analysis results
     const initialReports: GeneratedReport[] = analysisResults.map((result, index) => ({
       id: `report-analysis-${index}`,
       name: `${result.jurisdictionName} Compliance Report`,
@@ -182,7 +173,6 @@ const Reports: React.FC = () => {
       data: result
     }));
     
-    // Add some sample reports if needed
     if (initialReports.length === 0) {
       initialReports.push(
         {
@@ -221,12 +211,10 @@ const Reports: React.FC = () => {
     
     setIsGenerating(templateId);
     
-    // Simulate report generation (in a real app, this would call the backend)
     setTimeout(() => {
       const template = reportTemplates.find(t => t.id === templateId);
       
       if (template) {
-        // Use actual analysis results if available
         const matchingAnalysis = analysisResults.length > 0 ? 
           analysisResults[Math.floor(Math.random() * analysisResults.length)] : null;
         
@@ -276,10 +264,8 @@ const Reports: React.FC = () => {
     setIsExporting(true);
     
     try {
-      // Export the report using the backend service
-      const blob = await exportComplianceReport(report.data, report.format);
+      const blob = await exportComplianceReport(report.format, report.data);
       
-      // Create a download link
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -287,7 +273,6 @@ const Reports: React.FC = () => {
       document.body.appendChild(a);
       a.click();
       
-      // Clean up
       URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
@@ -323,7 +308,6 @@ const Reports: React.FC = () => {
     }
   };
 
-  // Get jurisdiction names
   const getJurisdictionNames = (ids: string[]) => {
     return ids.map(id => {
       const jurisdiction = jurisdictions.find(j => j.id === id);
@@ -603,7 +587,6 @@ const Reports: React.FC = () => {
         )}
       </div>
       
-      {/* Report Viewer Dialog */}
       <Dialog open={isViewerOpen} onOpenChange={setIsViewerOpen}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -742,7 +725,6 @@ const Reports: React.FC = () => {
   );
 };
 
-// Search icon component
 function Search(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg

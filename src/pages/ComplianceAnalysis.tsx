@@ -245,8 +245,9 @@ const ComplianceAnalysis: React.FC = () => {
           const result = await analyzeComplianceWithPython(jurisdictionId, useAiJudge);
           
           const matchingJurisdiction = jurisdictions.find(j => j.id === result.jurisdictionId);
-          const enrichedResult = {
+          const enrichedResult: JurisdictionData = {
             ...result,
+            requirementsList: result.requirementsList || [],
             flag: matchingJurisdiction?.flag || '🏳️',
             analysisDate: currentDate
           };
@@ -904,4 +905,3 @@ const ComplianceAnalysis: React.FC = () => {
 };
 
 export default ComplianceAnalysis;
-

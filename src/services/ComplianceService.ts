@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 
 // Detect environment and set the base URL accordingly
@@ -182,7 +181,7 @@ export const getRegulationDetails = async (regulationId: string, jurisdictionId:
   }
 };
 
-// Function to export compliance report
+// Function to export compliance report - fix parameter order to match the usage
 export const exportComplianceReport = async (format: string, data: any): Promise<Blob> => {
   try {
     const response = await fetch(`${PYTHON_API_URL}/export-report/${format}`, {
