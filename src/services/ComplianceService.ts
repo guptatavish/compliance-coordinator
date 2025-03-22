@@ -1,4 +1,4 @@
-import { getPerplexityApiKey, PYTHON_API_URL } from "../utils/apiKeys";
+import { getPerplexityApiKey, getMistralApiKey, PYTHON_API_URL } from "../utils/apiKeys";
 import { supabase } from "../integrations/supabase/client";
 
 export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
@@ -220,24 +220,34 @@ export const analyzeComplianceWithPython = async (
     
     // Get API keys
     const perplexityApiKey = getPerplexityApiKey();
+    const mistralApiKey = getMistralApiKey();
     
-    // Call the Supabase function
-    const { data, error } = await supabase.functions.invoke(
-      'analyze-regulations', 
-      {
-        body: {
-          companyProfile,
-          apiKey: perplexityApiKey,
-          mistralApiKey: null,  // We're not using Mistral AI for this request
-          useAiJudge: useAiJudge  // Pass the flag to use AI judge
-        }
-      }
-    );
-    
-    if (error) {
-      console.error('Error calling analyze-regulations function:', error);
-      throw new Error(error.message || 'Failed to analyze compliance');
+    if (!perplexityApiKey) {
+      throw new Error('Perplexity API key is required for analysis');
     }
+    
+    // Call the Python backend directly
+    console.log('Calling Python backend directly for compliance analysis');
+    
+    const response = await fetch(`${PYTHON_API_URL}/analyze-regulations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        companyProfile,
+        apiKey: perplexityApiKey,
+        mistralApiKey: mistralApiKey || null,
+        useAiJudge: useAiJudge  // Pass the flag to use AI judge
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.text();
+      throw new Error(`Python backend error: ${response.status} - ${errorData}`);
+    }
+    
+    const data = await response.json();
     
     if (!data) {
       throw new Error('No data returned from compliance analysis');
@@ -658,4 +668,3 @@ export const getRegulationDetails = async (
     return "Sorry, the detailed content for this regulatory document is not available at the moment. Please try again later or visit the official website.";
   }
 };
-
