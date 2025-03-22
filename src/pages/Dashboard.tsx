@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -23,26 +22,22 @@ const Dashboard: React.FC = () => {
   const [savedAnalyses, setSavedAnalyses] = useState<ComplianceResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check if user is authenticated
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
     }
   }, [isAuthenticated, navigate]);
 
-  // Load company profile and saved analyses
   useEffect(() => {
     const loadData = async () => {
       try {
         setIsLoading(true);
         
-        // Load company profile from localStorage
         const profileData = localStorage.getItem('companyProfile');
         if (profileData) {
           setCompanyProfile(JSON.parse(profileData));
         }
         
-        // Fetch saved compliance analyses
         const analyses = await fetchSavedComplianceAnalyses();
         setSavedAnalyses(analyses);
       } catch (error) {
@@ -62,7 +57,6 @@ const Dashboard: React.FC = () => {
     }
   }, [isAuthenticated, toast]);
 
-  // Calculate overall compliance score
   const calculateOverallCompliance = (): number => {
     if (savedAnalyses.length === 0) return 0;
     
@@ -70,12 +64,10 @@ const Dashboard: React.FC = () => {
     return Math.round(totalScore / savedAnalyses.length);
   };
 
-  // Get status count by type
   const getStatusCount = (status: 'compliant' | 'partial' | 'non-compliant'): number => {
     return savedAnalyses.filter(analysis => analysis.status === status).length;
   };
 
-  // Generate chart data for overall status
   const getStatusChartData = () => {
     return [
       { name: 'Compliant', value: getStatusCount('compliant') },
@@ -84,7 +76,6 @@ const Dashboard: React.FC = () => {
     ];
   };
 
-  // Get jurisdictions with highest and lowest compliance scores
   const getExtremeJurisdictions = () => {
     if (savedAnalyses.length === 0) return { highest: null, lowest: null };
     
@@ -95,7 +86,6 @@ const Dashboard: React.FC = () => {
     };
   };
 
-  // Calculate total requirements and met requirements
   const calculateRequirementStats = () => {
     let total = 0;
     let met = 0;
@@ -112,7 +102,6 @@ const Dashboard: React.FC = () => {
   const requirementStats = calculateRequirementStats();
   const overallScore = calculateOverallCompliance();
 
-  // Format the name of a jurisdiction
   const formatJurisdictionName = (jurisdictionId: string): string => {
     const jurisdiction = jurisdictions.find(j => j.id === jurisdictionId);
     return jurisdiction ? jurisdiction.name : jurisdictionId;
@@ -302,6 +291,7 @@ const Dashboard: React.FC = () => {
                     <CardContent>
                       <div className="h-[300px]">
                         <StatusChart 
+                          title="Compliance Status Distribution"
                           type="pie"
                           data={getStatusChartData()}
                           colors={['#10B981', '#F59E0B', '#EF4444']}
