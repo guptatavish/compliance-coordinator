@@ -200,85 +200,52 @@ export const fetchSavedComplianceAnalyses = async (): Promise<ComplianceResult[]
 };
 
 /**
- * Analyzes company compliance based on company profile and jurisdiction
+ * Analyze compliance with regulations for a specific jurisdiction
+ * @param jurisdictionId - The ID of the jurisdiction to analyze
+ * @param useAiJudge - Whether to use the AI Judge for advanced analysis
+ * @returns Promise with compliance results
  */
 export const analyzeComplianceWithPython = async (
-  jurisdiction: string,
-  uploadedDocuments?: UploadedDocument[]
+  jurisdictionId: string,
+  useAiJudge: boolean = false
 ): Promise<ComplianceResult> => {
   try {
-    const companyProfileStr = localStorage.getItem('companyProfile');
-    if (!companyProfileStr) {
-      throw new Error('Company profile not found');
+    console.log(`Starting compliance analysis for jurisdiction: ${jurisdictionId}`);
+    
+    const companyProfile = JSON.parse(localStorage.getItem('companyProfile') || '{}');
+    if (!companyProfile) {
+      throw new Error('No company profile found in local storage');
     }
     
-    const companyProfile = JSON.parse(companyProfileStr) as CompanyProfile;
+    // Get API keys
     const perplexityApiKey = getPerplexityApiKey();
     
-    if (!perplexityApiKey) {
-      throw new Error('Perplexity API key not found');
+    // Call the Supabase function
+    const { data, error } = await supabase.functions.invoke(
+      'analyze-regulations', 
+      {
+        body: {
+          companyProfile,
+          apiKey: perplexityApiKey,
+          mistralApiKey: null,  // We're not using Mistral AI for this request
+          useAiJudge: useAiJudge  // Pass the flag to use AI judge
+        }
+      }
+    );
+    
+    if (error) {
+      console.error('Error calling analyze-regulations function:', error);
+      throw new Error(error.message || 'Failed to analyze compliance');
     }
     
-    const isBackendHealthy = await checkPythonBackendHealth();
-    if (!isBackendHealthy) {
-      throw new Error('Python backend is not running or not accessible');
+    if (!data) {
+      throw new Error('No data returned from compliance analysis');
     }
     
-    console.log('Sending analysis request with company profile:', companyProfile);
-    console.log(`Sending request to Python backend at ${PYTHON_API_URL}/analyze-compliance`);
-    
-    const response = await fetch(`${PYTHON_API_URL}/analyze-compliance`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        apiKey: perplexityApiKey,
-        companyProfile,
-        jurisdiction,
-        documents: uploadedDocuments || []
-      }),
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Python API request failed: ${response.status} - ${errorText}`);
-    }
-    
-    const result = await response.json();
-    console.log('Received compliance data from Python backend:', result);
-    
-    if (result.requirementsList) {
-      result.requirementsList = result.requirementsList.map((req: any) => ({
-        ...req,
-        isMet: req.status === 'met',
-      }));
-    }
-    
-    const timestampedResult = {
-      ...result,
-      timestamp: Date.now()
-    };
-    
-    saveComplianceAnalysisToHistory(timestampedResult);
-    
-    return timestampedResult;
+    return data;
   } catch (error) {
-    console.error('Error analyzing compliance:', error);
-    return {
-      jurisdictionId: jurisdiction,
-      jurisdictionName: getJurisdictionName(jurisdiction),
-      complianceScore: 0,
-      status: 'non-compliant' as ComplianceStatus,
-      riskLevel: 'high' as ComplianceLevel,
-      requirements: {
-        total: 0,
-        met: 0,
-      },
-      requirementsList: [],
-      timestamp: Date.now(),
-      error: error instanceof Error ? error.message : 'Unknown error'
-    };
+    console.error('Error in analyzeComplianceWithPython:', error);
+    throw error;
   }
 };
 
