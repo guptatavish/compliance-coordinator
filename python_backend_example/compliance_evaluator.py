@@ -1,4 +1,3 @@
-
 import os
 import json
 import time
@@ -12,8 +11,35 @@ import tempfile
 import PyPDF2
 from pdf2image import convert_from_bytes
 import pytesseract
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
+
+# Update imports for Mistral AI client
+# The updated import paths to be compatible with current mistralai package
+try:
+    from mistralai.client import MistralClient
+    from mistralai.models.chat_completion import ChatMessage
+except ImportError:
+    # Fallback for newer versions of the mistralai package
+    try:
+        from mistralai.client import MistralClient
+        # In newer versions, ChatMessage might be in a different location or structure
+        try:
+            from mistralai.models import ChatMessage
+        except ImportError:
+            # Create a simple ChatMessage class if not available
+            class ChatMessage:
+                def __init__(self, role, content):
+                    self.role = role
+                    self.content = content
+
+    except ImportError:
+        # If mistralai package can't be imported at all
+        MistralClient = None
+        
+        # Create placeholder ChatMessage class
+        class ChatMessage:
+            def __init__(self, role, content):
+                self.role = role
+                self.content = content
 
 class PerplexityComplianceEvaluator:
     """
@@ -35,8 +61,9 @@ class PerplexityComplianceEvaluator:
         
         if mistral_api_key:
             try:
-                self.mistral_client = MistralClient(api_key=mistral_api_key)
-                print("Mistral AI client initialized successfully")
+                if MistralClient is not None:
+                    self.mistral_client = MistralClient(api_key=mistral_api_key)
+                    print("Mistral AI client initialized successfully")
             except Exception as e:
                 print(f"Failed to initialize Mistral AI client: {e}")
                 self.mistral_client = None
@@ -133,17 +160,46 @@ class PerplexityComplianceEvaluator:
             {ocr_text[:4000]}  # Limit text to avoid token limits
             """
             
-            # Send the request to Mistral AI
-            messages = [ChatMessage(role="user", content=prompt)]
+            # Try both newer and older API formats
+            try:
+                # Try the newer API format first
+                messages = [{"role": "user", "content": prompt}]
+                
+                chat_response = self.mistral_client.chat(
+                    model="mistral-large-latest",
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=4000
+                )
+                
+                # Extract content based on response structure
+                if hasattr(chat_response, 'choices') and len(chat_response.choices) > 0:
+                    if hasattr(chat_response.choices[0], 'message'):
+                        return chat_response.choices[0].message.content
+                    elif isinstance(chat_response.choices[0], dict) and 'message' in chat_response.choices[0]:
+                        return chat_response.choices[0]['message']['content']
+                
+                # Fallback return
+                return str(chat_response)
+                
+            except (AttributeError, TypeError) as e:
+                # Try the older ChatMessage API format
+                print(f"Falling back to older Mistral API format: {e}")
+                try:
+                    messages = [ChatMessage(role="user", content=prompt)]
+                    
+                    chat_response = self.mistral_client.chat(
+                        model="mistral-large-latest",
+                        messages=messages,
+                        temperature=0.1,
+                        max_tokens=4000
+                    )
+                    
+                    return chat_response.choices[0].message.content
+                except Exception as inner_e:
+                    print(f"Error with fallback Mistral API format: {inner_e}")
+                    return None
             
-            chat_response = self.mistral_client.chat(
-                model="mistral-large-latest",
-                messages=messages,
-                temperature=0.1,
-                max_tokens=4000
-            )
-            
-            return chat_response.choices[0].message.content
         except Exception as e:
             print(f"Error enhancing OCR with Mistral: {e}")
             return None
@@ -251,16 +307,42 @@ class PerplexityComplianceEvaluator:
                 {chunk}
                 """
                 
-                messages = [ChatMessage(role="user", content=prompt)]
-                
-                chat_response = self.mistral_client.chat(
-                    model="mistral-large-latest",
-                    messages=messages,
-                    temperature=0.1,
-                    max_tokens=2000
-                )
-                
-                summaries.append(chat_response.choices[0].message.content)
+                # Try both newer and older API formats
+                try:
+                    # Try the newer API format first
+                    messages = [{"role": "user", "content": prompt}]
+                    
+                    chat_response = self.mistral_client.chat(
+                        model="mistral-large-latest",
+                        messages=messages,
+                        temperature=0.1,
+                        max_tokens=2000
+                    )
+                    
+                    # Extract content based on response structure
+                    if hasattr(chat_response, 'choices') and len(chat_response.choices) > 0:
+                        if hasattr(chat_response.choices[0], 'message'):
+                            summaries.append(chat_response.choices[0].message.content)
+                        elif isinstance(chat_response.choices[0], dict) and 'message' in chat_response.choices[0]:
+                            summaries.append(chat_response.choices[0]['message']['content'])
+                    
+                except Exception as e:
+                    print(f"Error with newer Mistral API format: {e}")
+                    # Try the older ChatMessage API format
+                    try:
+                        messages = [ChatMessage(role="user", content=prompt)]
+                        
+                        chat_response = self.mistral_client.chat(
+                            model="mistral-large-latest",
+                            messages=messages,
+                            temperature=0.1,
+                            max_tokens=2000
+                        )
+                        
+                        summaries.append(chat_response.choices[0].message.content)
+                    except Exception as inner_e:
+                        print(f"Error with fallback Mistral API format: {inner_e}")
+                        summaries.append(f"Error summarizing chunk {i+1}: {inner_e}")
             
             # If we have multiple summaries, combine them
             if len(summaries) > 1:
@@ -274,16 +356,43 @@ class PerplexityComplianceEvaluator:
                 {combined_summary}
                 """
                 
-                messages = [ChatMessage(role="user", content=meta_prompt)]
+                # Try both newer and older API formats for meta-summary
+                try:
+                    messages = [{"role": "user", "content": meta_prompt}]
+                    
+                    chat_response = self.mistral_client.chat(
+                        model="mistral-large-latest",
+                        messages=messages,
+                        temperature=0.1,
+                        max_tokens=3000
+                    )
+                    
+                    # Extract content based on response structure
+                    if hasattr(chat_response, 'choices') and len(chat_response.choices) > 0:
+                        if hasattr(chat_response.choices[0], 'message'):
+                            return chat_response.choices[0].message.content
+                        elif isinstance(chat_response.choices[0], dict) and 'message' in chat_response.choices[0]:
+                            return chat_response.choices[0]['message']['content']
                 
-                chat_response = self.mistral_client.chat(
-                    model="mistral-large-latest",
-                    messages=messages,
-                    temperature=0.1,
-                    max_tokens=3000
-                )
+                except Exception as e:
+                    print(f"Error with newer Mistral API meta-summary: {e}")
+                    # Try the older ChatMessage API format
+                    try:
+                        messages = [ChatMessage(role="user", content=meta_prompt)]
+                        
+                        chat_response = self.mistral_client.chat(
+                            model="mistral-large-latest",
+                            messages=messages,
+                            temperature=0.1,
+                            max_tokens=3000
+                        )
+                        
+                        return chat_response.choices[0].message.content
+                    except Exception as inner_e:
+                        print(f"Error with fallback Mistral API meta-summary: {inner_e}")
+                        return combined_summary
                 
-                return chat_response.choices[0].message.content
+                return combined_summary
             else:
                 return summaries[0] if summaries else None
         
