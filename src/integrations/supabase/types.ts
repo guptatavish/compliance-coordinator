@@ -191,29 +191,38 @@ export type Database = {
         Row: {
           company_profile_id: string
           created_at: string
+          description: string | null
           document_type: string
           file_url: string | null
           generated_at: string
           id: string
+          issuer: string | null
           jurisdiction_id: string
+          title: string | null
         }
         Insert: {
           company_profile_id: string
           created_at?: string
+          description?: string | null
           document_type: string
           file_url?: string | null
           generated_at?: string
           id?: string
+          issuer?: string | null
           jurisdiction_id: string
+          title?: string | null
         }
         Update: {
           company_profile_id?: string
           created_at?: string
+          description?: string | null
           document_type?: string
           file_url?: string | null
           generated_at?: string
           id?: string
+          issuer?: string | null
           jurisdiction_id?: string
+          title?: string | null
         }
         Relationships: [
           {
