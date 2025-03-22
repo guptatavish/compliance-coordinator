@@ -1,4 +1,3 @@
-
 import { getPerplexityApiKey, PYTHON_API_URL } from "../utils/apiKeys";
 
 export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
@@ -34,6 +33,7 @@ export interface ComplianceResult {
   fullReport?: string;
   recommendations?: Recommendation[];
   error?: string; // Optional error property
+  timestamp?: number; // When the analysis was performed
 }
 
 export interface CompanyProfile {
@@ -43,6 +43,8 @@ export interface CompanyProfile {
   description: string;
   currentJurisdictions: string[];
   targetJurisdictions: string[];
+  files?: string[]; // Names of uploaded files
+  savedDocuments?: string[]; // Previously saved documents
   registrationNumber?: string;
   address?: string;
   website?: string;
@@ -247,7 +249,16 @@ export const analyzeComplianceWithPython = async (
       }));
     }
     
-    return result;
+    // Add timestamp to the result
+    const timestampedResult = {
+      ...result,
+      timestamp: Date.now()
+    };
+    
+    // Save to localStorage (for history)
+    saveComplianceAnalysisToHistory(timestampedResult);
+    
+    return timestampedResult;
   } catch (error) {
     console.error('Error analyzing compliance:', error);
     // Return fallback data with error indication
@@ -262,8 +273,41 @@ export const analyzeComplianceWithPython = async (
         met: 0,
       },
       requirementsList: [],
+      timestamp: Date.now(),
       error: error instanceof Error ? error.message : 'Unknown error'
     };
+  }
+};
+
+/**
+ * Save a compliance analysis to local storage history
+ */
+const saveComplianceAnalysisToHistory = (analysis: ComplianceResult): void => {
+  try {
+    // Get existing history
+    const historicalAnalysesStr = localStorage.getItem('historicalAnalyses');
+    let historicalAnalyses: ComplianceResult[][] = [];
+    
+    if (historicalAnalysesStr) {
+      historicalAnalyses = JSON.parse(historicalAnalysesStr);
+    }
+    
+    // Create a new entry for this analysis
+    const newEntry = [analysis];
+    
+    // Add to the beginning of the array (most recent first)
+    historicalAnalyses.unshift(newEntry);
+    
+    // Keep only the last 10 analyses
+    if (historicalAnalyses.length > 10) {
+      historicalAnalyses = historicalAnalyses.slice(0, 10);
+    }
+    
+    // Save back to localStorage
+    localStorage.setItem('historicalAnalyses', JSON.stringify(historicalAnalyses));
+    
+  } catch (error) {
+    console.error('Error saving compliance analysis to history:', error);
   }
 };
 

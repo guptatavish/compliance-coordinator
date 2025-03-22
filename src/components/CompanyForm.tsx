@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,7 @@ const CompanyForm: React.FC = () => {
   const [currentJurisdictions, setCurrentJurisdictions] = useState<string[]>([]);
   const [targetJurisdictions, setTargetJurisdictions] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
+  const [savedDocuments, setSavedDocuments] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
   const navigate = useNavigate();
@@ -48,6 +50,11 @@ const CompanyForm: React.FC = () => {
         setDescription(profile.description || '');
         setCurrentJurisdictions(profile.currentJurisdictions || []);
         setTargetJurisdictions(profile.targetJurisdictions || []);
+        
+        // Load saved document names
+        if (profile.savedDocuments && Array.isArray(profile.savedDocuments)) {
+          setSavedDocuments(profile.savedDocuments);
+        }
       } catch (error) {
         console.error('Error parsing saved profile:', error);
       }
@@ -72,6 +79,10 @@ const CompanyForm: React.FC = () => {
   
   const removeFile = (index: number) => {
     setFiles(files.filter((_, i) => i !== index));
+  };
+  
+  const removeSavedDocument = (documentName: string) => {
+    setSavedDocuments(savedDocuments.filter(doc => doc !== documentName));
   };
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -101,6 +112,9 @@ const CompanyForm: React.FC = () => {
     setIsLoading(true);
     
     try {
+      // Get file names from both new files and saved documents
+      const fileNames = files.map(file => file.name);
+      
       // Create company profile object
       const companyProfile = {
         companyName,
@@ -109,7 +123,8 @@ const CompanyForm: React.FC = () => {
         description,
         currentJurisdictions,
         targetJurisdictions,
-        files: files.map(file => file.name),
+        files: fileNames,
+        savedDocuments: savedDocuments, // Store saved documents separately
       };
       
       console.log('Saving company profile:', companyProfile);
@@ -125,7 +140,8 @@ const CompanyForm: React.FC = () => {
           industry,
           description,
           current_jurisdictions: currentJurisdictions,
-          target_jurisdictions: targetJurisdictions
+          target_jurisdictions: targetJurisdictions,
+          document_urls: [...savedDocuments, ...fileNames] // Combine both saved and new documents
         }]);
       } catch (dbError) {
         console.error("Failed to save to database, but continuing with localStorage:", dbError);
@@ -291,13 +307,46 @@ const CompanyForm: React.FC = () => {
               </p>
             </div>
             
+            {/* Previously saved documents section */}
+            {savedDocuments.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <Label>Previously Saved Documents</Label>
+                <div className="space-y-2">
+                  {savedDocuments.map((docName, index) => (
+                    <div
+                      key={`saved-${index}`}
+                      className="flex items-center justify-between p-2 bg-muted/30 rounded border"
+                    >
+                      <div className="flex items-center space-x-2 truncate">
+                        <span className="text-sm font-medium truncate">
+                          {docName}
+                        </span>
+                        <span className="text-xs text-green-600">
+                          (Saved)
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeSavedDocument(docName)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* New uploaded files section */}
             {files.length > 0 && (
               <div className="mt-4 space-y-2">
-                <Label>Uploaded Files</Label>
+                <Label>New Uploaded Files</Label>
                 <div className="space-y-2">
                   {files.map((file, index) => (
                     <div
-                      key={index}
+                      key={`new-${index}`}
                       className="flex items-center justify-between p-2 bg-muted/30 rounded border"
                     >
                       <div className="flex items-center space-x-2 truncate">
