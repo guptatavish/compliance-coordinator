@@ -1,4 +1,3 @@
-
 import { getPerplexityApiKey, PYTHON_API_URL } from "../utils/apiKeys";
 
 export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
@@ -121,6 +120,30 @@ export const uploadCompanyDocuments = async (
   } catch (error) {
     console.error('Error uploading documents:', error);
     throw error;
+  }
+};
+
+/**
+ * Fetch saved compliance analyses from local storage
+ */
+export const fetchLocalComplianceAnalyses = (): ComplianceResult[] => {
+  try {
+    // Get saved analyses from localStorage
+    const historicalAnalysesStr = localStorage.getItem('historicalAnalyses');
+    if (!historicalAnalysesStr) {
+      return [];
+    }
+    
+    // Parse analyses and return the most recent set
+    const historicalAnalyses = JSON.parse(historicalAnalysesStr);
+    if (Array.isArray(historicalAnalyses) && historicalAnalyses.length > 0) {
+      return historicalAnalyses[0]; // Return the most recent analysis
+    }
+    
+    return [];
+  } catch (error) {
+    console.error('Error fetching saved compliance analyses from localStorage:', error);
+    return [];
   }
 };
 

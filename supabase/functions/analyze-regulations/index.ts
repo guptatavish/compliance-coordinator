@@ -64,7 +64,7 @@ serve(async (req) => {
         Return a detailed JSON with the following structure:
         {
           "jurisdictionName": "Full name of jurisdiction",
-          "complianceScore": number between 0-100 representing overall compliance likelihood,
+          "complianceScore": 0, (DO NOT CALCULATE THIS - leave as 0, it will be calculated later)
           "status": "compliant" or "partial" or "non-compliant",
           "riskLevel": "low" or "medium" or "high",
           "requirements": {
@@ -86,6 +86,8 @@ serve(async (req) => {
         Include at least 8-12 specific requirements across 4-6 categories.
         Make the assessment realistic based on the company's industry and size.
         Base your analysis on the company profile data provided, including industry, size, and description.
+        Ensure that the 'requirements.met' value accurately reflects the count of requirements with status 'met' in the requirementsList.
+        Ensure that the 'requirements.total' value accurately reflects the total count of requirements in the requirementsList.
       `;
       
       try {
@@ -121,24 +123,40 @@ serve(async (req) => {
           const content = data.choices[0].message.content;
           let analysisData = JSON.parse(content);
           
-          // Validate complianceScore is a number, not a list/array
-          if (analysisData.complianceScore && Array.isArray(analysisData.complianceScore)) {
-            analysisData.complianceScore = 75; // Default to a middle value if array is received
-          }
-          
-          // Make sure complianceScore is a number
-          if (typeof analysisData.complianceScore !== 'number') {
-            analysisData.complianceScore = parseInt(analysisData.complianceScore) || 75;
+          // Validate requirementsList is an array
+          if (!Array.isArray(analysisData.requirementsList)) {
+            analysisData.requirementsList = [];
           }
           
           // Validate requirements object
           if (!analysisData.requirements || typeof analysisData.requirements !== 'object') {
-            analysisData.requirements = { total: 0, met: 0 };
+            analysisData.requirements = { 
+              total: analysisData.requirementsList.length, 
+              met: 0 
+            };
           }
           
-          // Validate requirementsList is an array
-          if (!Array.isArray(analysisData.requirementsList)) {
-            analysisData.requirementsList = [];
+          // Count requirements that are met
+          const metRequirements = analysisData.requirementsList.filter(req => req.status === 'met').length;
+          
+          // Set requirements counts based on requirementsList
+          analysisData.requirements.total = analysisData.requirementsList.length;
+          analysisData.requirements.met = metRequirements;
+          
+          // Calculate complianceScore based on met/total requirements
+          if (analysisData.requirements.total > 0) {
+            analysisData.complianceScore = Math.round((metRequirements / analysisData.requirements.total) * 100);
+          } else {
+            analysisData.complianceScore = 0;
+          }
+          
+          // Determine status based on complianceScore
+          if (analysisData.complianceScore >= 80) {
+            analysisData.status = 'compliant';
+          } else if (analysisData.complianceScore >= 50) {
+            analysisData.status = 'partial';
+          } else {
+            analysisData.status = 'non-compliant';
           }
           
           // Add jurisdiction ID to the response
@@ -152,9 +170,9 @@ serve(async (req) => {
             jurisdictionId,
             jurisdictionName: jurisdictionId,
             error: "Failed to parse analysis",
-            complianceScore: 50,
-            status: "partial",
-            riskLevel: "medium",
+            complianceScore: 0,
+            status: "non-compliant",
+            riskLevel: "high",
             requirements: { total: 0, met: 0 },
             requirementsList: []
           });
@@ -165,9 +183,9 @@ serve(async (req) => {
           jurisdictionId,
           jurisdictionName: jurisdictionId,
           error: `API error: ${apiError.message}`,
-          complianceScore: 50,
-          status: "partial",
-          riskLevel: "medium",
+          complianceScore: 0,
+          status: "non-compliant",
+          riskLevel: "high",
           requirements: { total: 0, met: 0 },
           requirementsList: []
         });

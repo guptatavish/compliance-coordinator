@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -12,8 +13,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { getPerplexityApiKey, hasPerplexityApiKey } from '@/utils/apiKeys';
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertTriangle, BookOpen, CheckSquare, Clock, Download, FileText, InfoIcon, LineChart, RefreshCw } from 'lucide-react';
-import { analyzeComplianceWithPython, checkPythonBackendHealth, ComplianceStatus, ComplianceLevel, Requirement } from '../services/ComplianceService';
+import { AlertTriangle, BookOpen, Calendar, CheckSquare, Clock, Download, FileText, History, InfoIcon, LineChart, RefreshCw } from 'lucide-react';
+import { analyzeComplianceWithPython, checkPythonBackendHealth, ComplianceStatus, ComplianceLevel, Requirement, ComplianceResult } from '../services/ComplianceService';
 
 interface JurisdictionData {
   jurisdictionId: string;
@@ -29,6 +30,7 @@ interface JurisdictionData {
   recentChanges?: number;
   requirementsList: Requirement[];
   error?: string;
+  analysisDate?: string;
 }
 
 const ComplianceAnalysis: React.FC = () => {
@@ -40,6 +42,8 @@ const ComplianceAnalysis: React.FC = () => {
   const [analysisComplete, setAnalysisComplete] = useState(false);
   const [jurisdictionsData, setJurisdictionsData] = useState<JurisdictionData[]>([]);
   const [pythonBackendAvailable, setPythonBackendAvailable] = useState<boolean | null>(null);
+  const [historicalAnalyses, setHistoricalAnalyses] = useState<JurisdictionData[][]>([]);
+  const [activeHistoryIndex, setActiveHistoryIndex] = useState(0);
   
   const hasCompanyProfile = !!localStorage.getItem('companyProfile');
   const companyProfileData = hasCompanyProfile 
@@ -65,6 +69,30 @@ const ComplianceAnalysis: React.FC = () => {
     };
     
     checkBackendHealth();
+  }, []);
+
+  // Load previous analyses from local storage
+  useEffect(() => {
+    const loadPreviousAnalyses = () => {
+      const savedAnalyses = localStorage.getItem('historicalAnalyses');
+      
+      if (savedAnalyses) {
+        try {
+          const parsedAnalyses = JSON.parse(savedAnalyses) as JurisdictionData[][];
+          setHistoricalAnalyses(parsedAnalyses);
+          
+          // If we have historical analyses, set the latest one as active
+          if (parsedAnalyses.length > 0) {
+            setJurisdictionsData(parsedAnalyses[0]);
+            setAnalysisComplete(true);
+          }
+        } catch (error) {
+          console.error("Error parsing saved analyses:", error);
+        }
+      }
+    };
+    
+    loadPreviousAnalyses();
   }, []);
 
   const handleRunAnalysis = async () => {
@@ -110,6 +138,7 @@ const ComplianceAnalysis: React.FC = () => {
       }
       
       const analysisResults: JurisdictionData[] = [];
+      const currentDate = new Date().toISOString();
       
       for (const jurisdictionId of companyProfileData.currentJurisdictions) {
         console.log(`Analyzing jurisdiction: ${jurisdictionId}`);
@@ -120,7 +149,8 @@ const ComplianceAnalysis: React.FC = () => {
           const matchingJurisdiction = jurisdictions.find(j => j.id === result.jurisdictionId);
           const enrichedResult = {
             ...result,
-            flag: matchingJurisdiction?.flag || '🏳️'
+            flag: matchingJurisdiction?.flag || '🏳️',
+            analysisDate: currentDate
           };
           
           analysisResults.push(enrichedResult);
@@ -187,13 +217,22 @@ const ComplianceAnalysis: React.FC = () => {
               met: 0,
             },
             requirementsList: [],
-            error: err instanceof Error ? err.message : 'Unknown error'
+            error: err instanceof Error ? err.message : 'Unknown error',
+            analysisDate: currentDate
           });
         }
       }
       
       setJurisdictionsData(analysisResults);
       setAnalysisComplete(true);
+      
+      // Update historical analyses
+      const updatedHistory = [analysisResults, ...historicalAnalyses];
+      setHistoricalAnalyses(updatedHistory);
+      setActiveHistoryIndex(0);
+      
+      // Save to localStorage
+      localStorage.setItem('historicalAnalyses', JSON.stringify(updatedHistory));
       
       toast({
         title: "Analysis Complete",
@@ -209,6 +248,13 @@ const ComplianceAnalysis: React.FC = () => {
       });
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleViewHistoricalAnalysis = (index: number) => {
+    if (index >= 0 && index < historicalAnalyses.length) {
+      setJurisdictionsData(historicalAnalyses[index]);
+      setActiveHistoryIndex(index);
     }
   };
 
@@ -257,6 +303,12 @@ const ComplianceAnalysis: React.FC = () => {
     ];
   };
 
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'Unknown date';
+    const date = new Date(dateString);
+    return date.toLocaleString();
+  };
+
   return (
     <Layout showFooter={false}>
       <div className="container px-4 py-8 mt-16">
@@ -303,28 +355,46 @@ const ComplianceAnalysis: React.FC = () => {
           </Alert>
         )}
         
-        {!isAnalyzing && !analysisComplete && (
-          <Card className="mb-8">
-            <CardContent className="pt-6">
-              <div className="text-center py-8">
-                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4 mx-auto">
-                  <LineChart className="h-8 w-8 text-primary" />
+        <div className="mb-8 flex justify-between items-center">
+          <div>
+            {historicalAnalyses.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Analysis History:</span>
+                <div className="flex gap-2">
+                  {historicalAnalyses.map((analysis, index) => (
+                    <Button 
+                      key={index} 
+                      variant={activeHistoryIndex === index ? "default" : "outline"} 
+                      size="sm"
+                      className="flex items-center gap-1"
+                      onClick={() => handleViewHistoricalAnalysis(index)}
+                    >
+                      <History className="h-3 w-3" />
+                      {index === 0 ? 'Latest' : `#${historicalAnalyses.length - index}`}
+                    </Button>
+                  ))}
                 </div>
-                <h2 className="text-2xl font-semibold mb-2">Run Compliance Analysis</h2>
-                <p className="text-muted-foreground mb-8 max-w-md mx-auto">
-                  Analyze your compliance status across all jurisdictions to identify gaps and receive recommendations.
-                </p>
-                <Button 
-                  onClick={handleRunAnalysis} 
-                  disabled={!hasPerplexityApiKey()}
-                >
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Run Analysis
-                </Button>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            )}
+          </div>
+          
+          <Button 
+            onClick={handleRunAnalysis} 
+            disabled={!hasPerplexityApiKey() || isAnalyzing || pythonBackendAvailable === false}
+          >
+            {isAnalyzing ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Run New Analysis
+              </>
+            )}
+          </Button>
+        </div>
         
         {isAnalyzing && (
           <Card className="mb-8">
@@ -348,15 +418,54 @@ const ComplianceAnalysis: React.FC = () => {
           </Card>
         )}
         
+        {!isAnalyzing && !analysisComplete && (
+          <Card className="mb-8">
+            <CardContent className="pt-6">
+              <div className="text-center py-8">
+                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4 mx-auto">
+                  <LineChart className="h-8 w-8 text-primary" />
+                </div>
+                <h2 className="text-2xl font-semibold mb-2">Run Compliance Analysis</h2>
+                <p className="text-muted-foreground mb-8 max-w-md mx-auto">
+                  Analyze your compliance status across all jurisdictions to identify gaps and receive recommendations.
+                </p>
+                <Button 
+                  onClick={handleRunAnalysis} 
+                  disabled={!hasPerplexityApiKey() || pythonBackendAvailable === false}
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Run Analysis
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        
         {analysisComplete && (
           <div className="space-y-8">
-            <Alert className="border-warning-500/50 bg-warning-50/50">
-              <AlertTriangle className="h-4 w-4 text-warning-500" />
-              <AlertTitle className="text-warning-500">Compliance Gaps Detected</AlertTitle>
-              <AlertDescription className="text-warning-600">
-                We've identified several compliance gaps across your jurisdictions. Review the analysis below for details and recommendations.
-              </AlertDescription>
-            </Alert>
+            {activeHistoryIndex === 0 && (
+              <Alert className="border-warning-500/50 bg-warning-50/50">
+                <AlertTriangle className="h-4 w-4 text-warning-500" />
+                <AlertTitle className="text-warning-500">Compliance Gaps Detected</AlertTitle>
+                <AlertDescription className="text-warning-600">
+                  We've identified several compliance gaps across your jurisdictions. Review the analysis below for details and recommendations.
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {historicalAnalyses.length > 0 && activeHistoryIndex < historicalAnalyses.length && (
+              <div className="bg-muted/30 p-3 rounded-md flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    {activeHistoryIndex === 0 
+                      ? 'Latest analysis performed on ' 
+                      : `Analysis #${historicalAnalyses.length - activeHistoryIndex} performed on `}
+                    {formatDate(historicalAnalyses[activeHistoryIndex][0]?.analysisDate)}
+                  </span>
+                </div>
+              </div>
+            )}
             
             <div>
               <div className="flex items-center justify-between mb-4">
@@ -595,6 +704,3 @@ const ComplianceAnalysis: React.FC = () => {
 };
 
 export default ComplianceAnalysis;
-
-
-

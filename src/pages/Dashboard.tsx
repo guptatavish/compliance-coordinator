@@ -38,19 +38,25 @@ const Dashboard: React.FC = () => {
           setCompanyProfile(JSON.parse(profileData));
         }
         
-        const analyses = await fetchSavedComplianceAnalyses();
+        const localAnalyses = fetchLocalComplianceAnalyses();
         
-        if (profileData) {
-          const profile = JSON.parse(profileData);
-          const currentJurisdictions = profile.currentJurisdictions || [];
-          
-          const filteredAnalyses = analyses.filter(analysis => 
-            currentJurisdictions.includes(analysis.jurisdictionId)
-          );
-          
-          setSavedAnalyses(filteredAnalyses);
+        if (localAnalyses.length > 0) {
+          setSavedAnalyses(localAnalyses);
         } else {
-          setSavedAnalyses(analyses);
+          const analyses = await fetchSavedComplianceAnalyses();
+          
+          if (profileData) {
+            const profile = JSON.parse(profileData);
+            const currentJurisdictions = profile.currentJurisdictions || [];
+            
+            const filteredAnalyses = analyses.filter(analysis => 
+              currentJurisdictions.includes(analysis.jurisdictionId)
+            );
+            
+            setSavedAnalyses(filteredAnalyses);
+          } else {
+            setSavedAnalyses(analyses);
+          }
         }
       } catch (error) {
         console.error('Error loading dashboard data:', error);
