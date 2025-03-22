@@ -22,10 +22,17 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import JurisdictionSelect from './JurisdictionSelect';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, X } from 'lucide-react';
+import { Upload, X, Trash2, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { Spinner } from '@/components/ui/spinner';
+import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
-const CompanyForm: React.FC = () => {
+interface CompanyFormProps {
+  onCompanyProfileSaved?: () => void;
+}
+
+const CompanyForm: React.FC<CompanyFormProps> = ({ onCompanyProfileSaved }) => {
   const [companyName, setCompanyName] = useState('');
   const [companySize, setCompanySize] = useState('');
   const [industry, setIndustry] = useState('');
@@ -35,6 +42,15 @@ const CompanyForm: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [savedDocuments, setSavedDocuments] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [registrationNumber, setRegistrationNumber] = useState('');
+  const [address, setAddress] = useState('');
+  const [website, setWebsite] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [foundedYear, setFoundedYear] = useState('');
+  const [businessType, setBusinessType] = useState('');
+  const [uploadError, setUploadError] = useState<string | null>(null);
   
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -50,6 +66,13 @@ const CompanyForm: React.FC = () => {
         setDescription(profile.description || '');
         setCurrentJurisdictions(profile.currentJurisdictions || []);
         setTargetJurisdictions(profile.targetJurisdictions || []);
+        setRegistrationNumber(profile.registrationNumber || '');
+        setAddress(profile.address || '');
+        setWebsite(profile.website || '');
+        setPhone(profile.phone || '');
+        setEmail(profile.email || '');
+        setFoundedYear(profile.foundedYear || '');
+        setBusinessType(profile.businessType || '');
         
         // Load saved document names
         if (profile.savedDocuments && Array.isArray(profile.savedDocuments)) {
@@ -63,17 +86,44 @@ const CompanyForm: React.FC = () => {
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    setUploadError(null);
     
     if (e.dataTransfer.files) {
+      // Check file size before adding
       const newFiles = Array.from(e.dataTransfer.files);
-      setFiles(prev => [...prev, ...newFiles]);
+      const validFiles: File[] = [];
+      
+      newFiles.forEach(file => {
+        // Check if file is too large (10MB limit)
+        if (file.size > 10 * 1024 * 1024) {
+          setUploadError(`File "${file.name}" exceeds the 10MB size limit`);
+        } else {
+          validFiles.push(file);
+        }
+      });
+      
+      setFiles(prev => [...prev, ...validFiles]);
     }
   };
   
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUploadError(null);
+    
     if (e.target.files) {
+      // Check file size before adding
       const newFiles = Array.from(e.target.files);
-      setFiles(prev => [...prev, ...newFiles]);
+      const validFiles: File[] = [];
+      
+      newFiles.forEach(file => {
+        // Check if file is too large (10MB limit)
+        if (file.size > 10 * 1024 * 1024) {
+          setUploadError(`File "${file.name}" exceeds the 10MB size limit`);
+        } else {
+          validFiles.push(file);
+        }
+      });
+      
+      setFiles(prev => [...prev, ...validFiles]);
     }
   };
   
@@ -83,6 +133,88 @@ const CompanyForm: React.FC = () => {
   
   const removeSavedDocument = (documentName: string) => {
     setSavedDocuments(savedDocuments.filter(doc => doc !== documentName));
+  };
+  
+  const clearAllFiles = () => {
+    setFiles([]);
+    setSavedDocuments([]);
+  };
+  
+  const uploadFiles = async (filesToUpload: File[]): Promise<string[]> => {
+    if (!filesToUpload.length) return [];
+    
+    try {
+      const fileNames: string[] = [];
+      const totalFiles = filesToUpload.length;
+      let uploadedCount = 0;
+      
+      // Simple progress tracking
+      const updateProgress = () => {
+        uploadedCount++;
+        setUploadProgress(Math.round((uploadedCount / totalFiles) * 100));
+      };
+      
+      // Prepare file data for storage in localStorage
+      for (const file of filesToUpload) {
+        try {
+          // Read file as base64 for storage 
+          const base64Data = await readFileAsDataURL(file);
+          
+          // Store file in localStorage with metadata
+          const fileKey = `document_${Date.now()}_${file.name}`;
+          localStorage.setItem(fileKey, JSON.stringify({
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            data: base64Data,
+            uploadDate: new Date().toISOString()
+          }));
+          
+          fileNames.push(file.name);
+          updateProgress();
+          
+        } catch (fileError) {
+          console.error(`Error processing file ${file.name}:`, fileError);
+          // Continue with other files even if one fails
+        }
+      }
+      
+      // When also using Supabase, upload files to storage
+      try {
+        if (supabase) {
+          for (const file of filesToUpload) {
+            const fileName = `companies/${companyName.replace(/\s+/g, '_').toLowerCase()}/${Date.now()}_${file.name}`;
+            const { error } = await supabase.storage
+              .from('company_documents')
+              .upload(fileName, file, {
+                cacheControl: '3600',
+                upsert: true
+              });
+                
+            if (error) {
+              console.error("Supabase upload error:", error);
+            }
+          }
+        }
+      } catch (supabaseError) {
+        console.error("Supabase upload failed, but continuing with local storage:", supabaseError);
+      }
+      
+      return fileNames;
+      
+    } catch (error) {
+      console.error("Error uploading files:", error);
+      throw new Error("Failed to upload documents. Please try again.");
+    }
+  };
+  
+  const readFileAsDataURL = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   };
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -110,12 +242,16 @@ const CompanyForm: React.FC = () => {
     }
 
     setIsLoading(true);
+    setUploadProgress(0);
     
     try {
-      // Get file names from both new files and saved documents
-      const fileNames = files.map(file => file.name);
+      // Upload any new files
+      let uploadedFileNames: string[] = [];
+      if (files.length > 0) {
+        uploadedFileNames = await uploadFiles(files);
+      }
       
-      // Create company profile object
+      // Create company profile object with complete information
       const companyProfile = {
         companyName,
         companySize,
@@ -123,7 +259,14 @@ const CompanyForm: React.FC = () => {
         description,
         currentJurisdictions,
         targetJurisdictions,
-        files: fileNames,
+        registrationNumber,
+        address,
+        website,
+        phone,
+        email,
+        foundedYear,
+        businessType,
+        files: uploadedFileNames,
         savedDocuments: savedDocuments, // Store saved documents separately
       };
       
@@ -141,7 +284,14 @@ const CompanyForm: React.FC = () => {
           description,
           current_jurisdictions: currentJurisdictions,
           target_jurisdictions: targetJurisdictions,
-          document_urls: [...savedDocuments, ...fileNames] // Combine both saved and new documents
+          document_urls: [...savedDocuments, ...uploadedFileNames], // Combine both saved and new documents
+          registration_number: registrationNumber,
+          address,
+          website,
+          phone,
+          email,
+          founded_year: foundedYear,
+          business_type: businessType
         }]);
       } catch (dbError) {
         console.error("Failed to save to database, but continuing with localStorage:", dbError);
@@ -151,6 +301,11 @@ const CompanyForm: React.FC = () => {
         title: "Profile saved",
         description: "Your company profile has been saved successfully.",
       });
+      
+      // Call the callback if provided
+      if (onCompanyProfileSaved) {
+        onCompanyProfileSaved();
+      }
       
       navigate('/dashboard');
     } catch (error) {
@@ -184,6 +339,16 @@ const CompanyForm: React.FC = () => {
     { value: "private_equity", label: "Private Equity & Venture Capital" },
     { value: "real_estate", label: "Real Estate Finance" },
     { value: "other", label: "Other Financial Services" },
+  ];
+  
+  const businessTypes = [
+    { value: "corporation", label: "Corporation" },
+    { value: "llc", label: "Limited Liability Company (LLC)" },
+    { value: "partnership", label: "Partnership" },
+    { value: "sole_proprietorship", label: "Sole Proprietorship" },
+    { value: "non_profit", label: "Non-Profit Organization" },
+    { value: "public", label: "Public Company" },
+    { value: "private", label: "Private Company" },
   ];
 
   return (
@@ -230,24 +395,115 @@ const CompanyForm: React.FC = () => {
             </div>
           </div>
           
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="industry" className="required">Industry</Label>
+              <Select 
+                value={industry} 
+                onValueChange={setIndustry}
+                required
+              >
+                <SelectTrigger id="industry">
+                  <SelectValue placeholder="Select industry" />
+                </SelectTrigger>
+                <SelectContent>
+                  {industries.map((ind) => (
+                    <SelectItem key={ind.value} value={ind.value}>
+                      {ind.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="business-type">Business Type</Label>
+              <Select 
+                value={businessType} 
+                onValueChange={setBusinessType}
+              >
+                <SelectTrigger id="business-type">
+                  <SelectValue placeholder="Select business type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {businessTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="registration-number">Registration Number</Label>
+              <Input
+                id="registration-number"
+                value={registrationNumber}
+                onChange={(e) => setRegistrationNumber(e.target.value)}
+                placeholder="Company registration or tax ID"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="founded-year">Founded Year</Label>
+              <Input
+                id="founded-year"
+                value={foundedYear}
+                onChange={(e) => setFoundedYear(e.target.value)}
+                placeholder="Year company was founded"
+                type="number"
+                min="1800"
+                max={new Date().getFullYear()}
+              />
+            </div>
+          </div>
+          
           <div className="space-y-2">
-            <Label htmlFor="industry" className="required">Industry</Label>
-            <Select 
-              value={industry} 
-              onValueChange={setIndustry}
-              required
-            >
-              <SelectTrigger id="industry">
-                <SelectValue placeholder="Select industry" />
-              </SelectTrigger>
-              <SelectContent>
-                {industries.map((ind) => (
-                  <SelectItem key={ind.value} value={ind.value}>
-                    {ind.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="address">Company Address</Label>
+            <Textarea
+              id="address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="Full company address"
+              rows={2}
+            />
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="website">Website</Label>
+              <Input
+                id="website"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="https://company.com"
+                type="url"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="contact@company.com"
+                type="email"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone</Label>
+              <Input
+                id="phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+1 123 456 7890"
+              />
+            </div>
           </div>
           
           <div className="space-y-2">
@@ -284,7 +540,22 @@ const CompanyForm: React.FC = () => {
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="documents">Company Documents</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="documents">Company Documents</Label>
+              {(files.length > 0 || savedDocuments.length > 0) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearAllFiles}
+                  className="flex items-center text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  Clear all
+                </Button>
+              )}
+            </div>
+            
             <div
               className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:bg-muted/50 transition-colors"
               onDragOver={(e) => e.preventDefault()}
@@ -303,9 +574,28 @@ const CompanyForm: React.FC = () => {
                 Drag and drop files, or click to browse
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Upload company documents, registrations, or policies
+                Upload company documents, registrations, or policies (Max 10MB per file)
               </p>
             </div>
+            
+            {uploadError && (
+              <Alert variant="destructive" className="mt-2">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  {uploadError}
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {isLoading && uploadProgress > 0 && (
+              <div className="space-y-2 mt-2">
+                <div className="flex justify-between text-xs">
+                  <span>Uploading documents...</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <Progress value={uploadProgress} className="h-2" />
+              </div>
+            )}
             
             {/* Previously saved documents section */}
             {savedDocuments.length > 0 && (
@@ -378,7 +668,12 @@ const CompanyForm: React.FC = () => {
             Cancel
           </Button>
           <Button type="submit" disabled={isLoading}>
-            {isLoading ? 'Saving...' : 'Save Profile'}
+            {isLoading ? (
+              <>
+                <Spinner className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : 'Save Profile'}
           </Button>
         </CardFooter>
       </form>

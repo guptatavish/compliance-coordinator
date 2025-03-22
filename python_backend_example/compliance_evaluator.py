@@ -2,9 +2,8 @@
 import os
 import json
 import time
-import pandas as pd
 import requests
-from tqdm import tqdm
+from typing import Dict, List, Optional, Union, Any
 from datetime import datetime
 import re
 import io
@@ -13,26 +12,38 @@ import tempfile
 import PyPDF2
 from pdf2image import convert_from_bytes
 import pytesseract
-from mistralai import Mistral
+from mistralai.client import MistralClient
+from mistralai.models.chat_completion import ChatMessage
 
 class PerplexityComplianceEvaluator:
-    def __init__(self, perplexity_api_key, mistral_api_key=None):
+    """
+    A class that evaluates company compliance with financial regulations
+    using the Perplexity API and optionally Mistral AI for document processing.
+    """
+    
+    def __init__(self, perplexity_api_key: str, mistral_api_key: Optional[str] = None):
         """
-        Initialize the Financial Compliance Evaluator using Perplexity API
+        Initialize the Financial Compliance Evaluator
         
         Args:
-            perplexity_api_key (str): Perplexity API key
+            perplexity_api_key (str): Perplexity API key for regulatory information retrieval
             mistral_api_key (str, optional): Mistral API key for OCR and document analysis
         """
         self.perplexity_api_key = perplexity_api_key
         self.mistral_api_key = mistral_api_key
         self.mistral_client = None
-        if mistral_api_key:
-            self.mistral_client = Mistral(api_key=mistral_api_key)
         
-    def extract_text_from_pdf(self, pdf_content):
+        if mistral_api_key:
+            try:
+                self.mistral_client = MistralClient(api_key=mistral_api_key)
+                print("Mistral AI client initialized successfully")
+            except Exception as e:
+                print(f"Failed to initialize Mistral AI client: {e}")
+                self.mistral_client = None
+    
+    def extract_text_from_pdf(self, pdf_content: bytes) -> str:
         """
-        Extract text from PDF content
+        Extract text from PDF content using PyPDF2 with fallback to OCR
         
         Args:
             pdf_content (bytes): PDF file content
@@ -41,11 +52,12 @@ class PerplexityComplianceEvaluator:
             str: Extracted text
         """
         try:
-            # First try PyPDF2
+            # First try PyPDF2 for text extraction
             pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_content))
             text = ""
             for page_num in range(len(pdf_reader.pages)):
-                text += pdf_reader.pages[page_num].extract_text() + "\n"
+                page_text = pdf_reader.pages[page_num].extract_text() or ""
+                text += page_text + "\n"
             
             # If the extracted text is too short, try OCR
             if len(text.strip()) < 100:
@@ -55,11 +67,12 @@ class PerplexityComplianceEvaluator:
             return text
         except Exception as e:
             print(f"Error extracting text from PDF: {e}")
+            # Fall back to OCR if PyPDF2 fails
             return self.ocr_pdf(pdf_content)
-            
-    def ocr_pdf(self, pdf_content):
+    
+    def ocr_pdf(self, pdf_content: bytes) -> str:
         """
-        Perform OCR on PDF content
+        Perform OCR on PDF content using pytesseract
         
         Args:
             pdf_content (bytes): PDF file content
@@ -73,25 +86,29 @@ class PerplexityComplianceEvaluator:
             with tempfile.TemporaryDirectory() as temp_dir:
                 # Convert PDF to images
                 images = convert_from_bytes(pdf_content)
+                
+                # Process each page
                 for i, image in enumerate(images):
                     # Save the image temporarily
                     image_path = os.path.join(temp_dir, f'page_{i}.png')
                     image.save(image_path, 'PNG')
+                    
                     # Perform OCR
-                    text += pytesseract.image_to_string(image_path) + "\n"
+                    page_text = pytesseract.image_to_string(image_path) or ""
+                    text += page_text + "\n"
             
-            # If the Mistral API client is available, use it to enhance the OCR results
+            # If Mistral AI client is available, use it to enhance the OCR results
             if self.mistral_client and text.strip():
                 enhanced_text = self.enhance_ocr_with_mistral(text)
                 if enhanced_text:
                     return enhanced_text
-                    
+            
             return text
         except Exception as e:
             print(f"Error performing OCR on PDF: {e}")
             return ""
-            
-    def enhance_ocr_with_mistral(self, ocr_text):
+    
+    def enhance_ocr_with_mistral(self, ocr_text: str) -> Optional[str]:
         """
         Enhance OCR results using Mistral AI
         
@@ -99,12 +116,12 @@ class PerplexityComplianceEvaluator:
             ocr_text (str): Raw OCR text
             
         Returns:
-            str: Enhanced OCR text
+            str: Enhanced OCR text or None if enhancement fails
         """
+        if not self.mistral_client:
+            return None
+        
         try:
-            if not self.mistral_client:
-                return ocr_text
-                
             # Prepare the prompt for Mistral
             prompt = f"""I need help cleaning and structuring OCR text extracted from a financial or compliance document. 
             The text may have errors, missing spaces, or formatting issues. Please fix any obvious OCR errors, 
@@ -116,9 +133,12 @@ class PerplexityComplianceEvaluator:
             {ocr_text[:4000]}  # Limit text to avoid token limits
             """
             
-            chat_response = self.mistral_client.chat.complete(
+            # Send the request to Mistral AI
+            messages = [ChatMessage(role="user", content=prompt)]
+            
+            chat_response = self.mistral_client.chat(
                 model="mistral-large-latest",
-                messages = [{"role": "user", "content": prompt}],
+                messages=messages,
                 temperature=0.1,
                 max_tokens=4000
             )
@@ -126,9 +146,9 @@ class PerplexityComplianceEvaluator:
             return chat_response.choices[0].message.content
         except Exception as e:
             print(f"Error enhancing OCR with Mistral: {e}")
-            return ocr_text
-            
-    def analyze_documents(self, documents):
+            return None
+    
+    def analyze_documents(self, documents: List[Dict[str, Any]]) -> str:
         """
         Analyze uploaded documents to extract compliance-relevant information
         
@@ -140,7 +160,7 @@ class PerplexityComplianceEvaluator:
         """
         if not documents:
             return ""
-            
+        
         all_text = ""
         
         for doc in documents:
@@ -150,14 +170,20 @@ class PerplexityComplianceEvaluator:
                 
                 if not content:
                     continue
-                    
+                
                 # Convert base64 to bytes if needed
                 if isinstance(content, str) and content.startswith('data:'):
                     # Extract the base64 part
                     content = content.split(',')[1]
                     content = base64.b64decode(content)
                 elif isinstance(content, str):
-                    content = base64.b64decode(content)
+                    try:
+                        content = base64.b64decode(content)
+                    except Exception as base64_error:
+                        print(f"Error decoding base64 content: {base64_error}")
+                        # If it's not proper base64, treat it as plain text
+                        all_text += f"\n\n--- Document: {file_name} ---\n\n{content}"
+                        continue
                 
                 print(f"Processing document: {file_name}")
                 
@@ -165,11 +191,18 @@ class PerplexityComplianceEvaluator:
                 if file_name.lower().endswith('.pdf'):
                     text = self.extract_text_from_pdf(content)
                     all_text += f"\n\n--- Document: {file_name} ---\n\n{text}"
+                
                 # Handle text files
                 elif file_name.lower().endswith(('.txt', '.md', '.csv')):
-                    text = content.decode('utf-8', errors='ignore')
-                    all_text += f"\n\n--- Document: {file_name} ---\n\n{text}"
+                    try:
+                        text = content.decode('utf-8', errors='ignore')
+                        all_text += f"\n\n--- Document: {file_name} ---\n\n{text}"
+                    except Exception as decode_error:
+                        print(f"Error decoding text from {file_name}: {decode_error}")
+                
                 # Add more file type handlers as needed
+                else:
+                    print(f"Unsupported file type for {file_name}, skipping")
                 
             except Exception as e:
                 print(f"Error processing document {file_name}: {e}")
@@ -182,10 +215,10 @@ class PerplexityComplianceEvaluator:
                     all_text = f"# Document Summary\n\n{summary}\n\n# Full Document Text\n\n{all_text}"
             except Exception as e:
                 print(f"Error summarizing documents with Mistral: {e}")
-                
+        
         return all_text
     
-    def summarize_with_mistral(self, text):
+    def summarize_with_mistral(self, text: str) -> Optional[str]:
         """
         Summarize text using Mistral AI
         
@@ -193,12 +226,12 @@ class PerplexityComplianceEvaluator:
             text (str): Text to summarize
             
         Returns:
-            str: Summarized text
+            str: Summarized text or None if summarization fails
         """
+        if not self.mistral_client:
+            return None
+        
         try:
-            if not self.mistral_client:
-                return ""
-                
             # Prepare chunks of text to handle large documents
             chunks = [text[i:i+8000] for i in range(0, len(text), 8000)]
             summaries = []
@@ -218,17 +251,17 @@ class PerplexityComplianceEvaluator:
                 {chunk}
                 """
                 
-                chat_response = self.mistral_client.chat.complete(
+                messages = [ChatMessage(role="user", content=prompt)]
+                
+                chat_response = self.mistral_client.chat(
                     model="mistral-large-latest",
-                    messages=[
-                        ChatMessage(role="user", content=prompt)
-                    ],
+                    messages=messages,
                     temperature=0.1,
                     max_tokens=2000
                 )
                 
                 summaries.append(chat_response.choices[0].message.content)
-                
+            
             # If we have multiple summaries, combine them
             if len(summaries) > 1:
                 combined_summary = "\n\n".join(summaries)
@@ -241,24 +274,24 @@ class PerplexityComplianceEvaluator:
                 {combined_summary}
                 """
                 
+                messages = [ChatMessage(role="user", content=meta_prompt)]
+                
                 chat_response = self.mistral_client.chat(
                     model="mistral-large-latest",
-                    messages=[
-                        ChatMessage(role="user", content=meta_prompt)
-                    ],
+                    messages=messages,
                     temperature=0.1,
                     max_tokens=3000
                 )
                 
                 return chat_response.choices[0].message.content
             else:
-                return summaries[0] if summaries else ""
-                
+                return summaries[0] if summaries else None
+        
         except Exception as e:
             print(f"Error summarizing with Mistral: {e}")
-            return ""
+            return None
     
-    def query_perplexity_api(self, query):
+    def query_perplexity_api(self, query: str) -> Dict[str, Any]:
         """
         Query the Perplexity API with the given prompt using Sonar Pro
         
@@ -300,35 +333,59 @@ Be thorough in your research and analysis. Use current regulations and requireme
             "max_tokens": 4000,  # Allow for comprehensive analysis
         }
         
-        try:
-            print("Sending request to Perplexity API...")
-            
-            response = requests.post(API_URL, headers=headers, json=payload)
-            
-            # Display status code
-            print(f"Response status code: {response.status_code}")
-            
-            # Handle error cases
-            if response.status_code != 200:
-                print(f"Error details: {response.text}")
-                raise requests.exceptions.HTTPError(f"API error: {response.status_code}")
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                print("Sending request to Perplexity API...")
                 
-            response.raise_for_status()
+                response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
+                
+                # Display status code
+                print(f"Response status code: {response.status_code}")
+                
+                # Handle error cases
+                if response.status_code != 200:
+                    print(f"Error details: {response.text}")
+                    
+                    # Rate limiting - implement exponential backoff
+                    if response.status_code == 429:
+                        retry_count += 1
+                        wait_time = 2 ** retry_count  # Exponential backoff: 2, 4, 8 seconds
+                        print(f"Rate limited. Retrying in {wait_time} seconds... (Attempt {retry_count}/{max_retries})")
+                        time.sleep(wait_time)
+                        continue
+                    
+                    raise requests.exceptions.HTTPError(f"API error: {response.status_code}")
+                
+                result = response.json()
+                return result
             
-            result = response.json()
-            return result
-        except requests.exceptions.HTTPError as e:
-            print(f"HTTP Error: {e}")
-            if response.status_code == 429:
-                print("Rate limited. Waiting 60 seconds...")
-                time.sleep(60)
-                return self.query_perplexity_api(query)
-            raise
-        except Exception as e:
-            print(f"Error querying Perplexity API: {e}")
-            raise
+            except requests.exceptions.HTTPError as e:
+                # Already handled rate limits above
+                if "429" not in str(e):
+                    print(f"HTTP Error: {e}")
+                    raise
+            
+            except requests.exceptions.RequestException as e:
+                print(f"Request error: {e}")
+                retry_count += 1
+                if retry_count < max_retries:
+                    print(f"Retrying in {retry_count * 2} seconds...")
+                    time.sleep(retry_count * 2)
+                else:
+                    print("Maximum retries reached. Giving up.")
+                    raise
+            
+            except Exception as e:
+                print(f"Unexpected error querying Perplexity API: {e}")
+                raise
+        
+        # If we've exhausted all retries
+        raise Exception("Failed to get a valid response from Perplexity API after multiple attempts")
     
-    def evaluate_compliance(self, company_data, documents=None):
+    def evaluate_compliance(self, company_data: Dict[str, Any], documents: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Evaluate the company's compliance with financial regulations
         
@@ -339,10 +396,15 @@ Be thorough in your research and analysis. Use current regulations and requireme
         Returns:
             dict: Evaluation results
         """
+        start_time = time.time()
+        print(f"Starting compliance evaluation for {company_data.get('companyName', 'Unknown Company')}")
+        
         # Process any documents first to extract text
         document_text = ""
         if documents:
+            print(f"Processing {len(documents)} uploaded documents")
             document_text = self.analyze_documents(documents)
+            print(f"Document processing complete. Extracted {len(document_text)} characters of text")
         
         # Extract key information from company data
         company_name = company_data.get('companyName', '')
@@ -368,6 +430,7 @@ Be thorough in your research and analysis. Use current regulations and requireme
             if jurisdictions and len(jurisdictions) > 0:
                 country = jurisdiction_mapping.get(jurisdictions[0].lower(), jurisdictions[0])
         
+        # Extract all other company information
         industry = company_data.get('industry', '')
         company_size = company_data.get('companySize', '')
         registration_number = company_data.get('registrationNumber', '')
@@ -406,14 +469,35 @@ Be thorough in your research and analysis. Use current regulations and requireme
             financial_data += f"- **Founded Year**: {founded_year}\n"
         if business_type:
             financial_data += f"- **Business Type**: {business_type}\n"
-            
+        
         if company_description:
             financial_data += f"\n**Description**: {company_description}\n"
         
         # Add document content if available
         document_section = ""
         if document_text:
-            document_section = f"\n\n## Document Analysis\n\nThe following information was extracted from the provided documents:\n\n{document_text[:2000]}...\n\n"
+            # Limit the document content to avoid exceeding token limits
+            doc_excerpt = document_text[:3000] + "..." if len(document_text) > 3000 else document_text
+            document_section = f"\n\n## Document Analysis\n\nThe following information was extracted from the provided documents:\n\n{doc_excerpt}\n\n"
+        
+        # Target jurisdictions
+        target_jurisdictions = ""
+        if 'targetJurisdictions' in company_data and company_data['targetJurisdictions']:
+            jurisdiction_mapping = {
+                'us': 'United States',
+                'uk': 'United Kingdom',
+                'eu': 'European Union',
+                'ca': 'Canada',
+                'au': 'Australia',
+                'sg': 'Singapore',
+                'hk': 'Hong Kong'
+            }
+            target_juris = []
+            for j in company_data['targetJurisdictions']:
+                target_juris.append(jurisdiction_mapping.get(j.lower(), j))
+            
+            if target_juris:
+                target_jurisdictions = f"\n## Expansion Plans\n\nThe company is planning to expand to the following jurisdictions: {', '.join(target_juris)}.\n"
         
         # Construct the query for Perplexity API
         query = f"""
@@ -422,6 +506,7 @@ Be thorough in your research and analysis. Use current regulations and requireme
 ## Company Profile
 {financial_data}
 {document_section}
+{target_jurisdictions}
 
 ## Evaluation Request
 
@@ -443,6 +528,7 @@ Focus on providing deep insights specific to this company, not generic complianc
         print("Evaluating financial compliance...")
         
         try:
+            # Query the Perplexity API
             result = self.query_perplexity_api(query)
             
             # Extract the content from the API response
@@ -454,27 +540,42 @@ Focus on providing deep insights specific to this company, not generic complianc
             # Generate a summary section
             summary = self.generate_summary(processed_content)
             
+            # Extract key data from the content
+            risk_assessments = self.extract_risk_assessments(processed_content)
+            recommendations = self.extract_recommendations(processed_content)
+            requirements = self.extract_requirements(processed_content)
+            regulatory_references = self.extract_regulatory_references(processed_content)
+            
+            # Calculate execution time
+            execution_time = time.time() - start_time
+            print(f"Compliance evaluation completed in {execution_time:.2f} seconds")
+            
             # Return results
             return {
                 "company_name": company_name,
                 "evaluation_date": datetime.now().isoformat(),
                 "content": processed_content,
                 "summary": summary,
-                "risk_assessments": self.extract_risk_assessments(processed_content),
-                "recommendations": self.extract_recommendations(processed_content),
-                "requirements": self.extract_requirements(processed_content)
+                "risk_assessments": risk_assessments,
+                "recommendations": recommendations,
+                "requirements": requirements,
+                "regulatory_references": regulatory_references,
+                "execution_time": execution_time
             }
-            
+        
         except Exception as e:
             print(f"Error in compliance evaluation: {e}")
             import traceback
             traceback.print_exc()
+            
             return {
                 "error": str(e),
+                "company_name": company_name,
+                "evaluation_date": datetime.now().isoformat(),
                 "content": "Failed to generate compliance evaluation. Please check the API key and try again."
             }
     
-    def process_markdown_content(self, content, company_name, date):
+    def process_markdown_content(self, content: str, company_name: str, date: str) -> str:
         """
         Process and enhance the Markdown content from the API
         
@@ -491,7 +592,7 @@ Focus on providing deep insights specific to this company, not generic complianc
             header = f"# Financial Compliance Evaluation for {company_name}\n\n"
             header += f"**Date**: {date}\n\n"
             content = header + content
-            
+        
         # Ensure citations are properly formatted and collected at the end
         citation_pattern = r'\[([^\]]+)\]\((https?://[^\)]+)\)'
         citations = re.findall(citation_pattern, content)
@@ -506,11 +607,16 @@ Focus on providing deep insights specific to this company, not generic complianc
                 if url.startswith(("http://", "https://")):
                     # Check if it's a government URL
                     domain = url.split('/')[2]
-                    if ('.gov.' in domain or domain.endswith('.gov')):
+                    if ('.gov.' in domain or domain.endswith('.gov') or 
+                        '.europa.eu' in domain or domain.endswith('.europa.eu') or
+                        '.gc.ca' in domain or domain.endswith('.gc.ca') or
+                        '.gov.uk' in domain or domain.endswith('.gov.uk') or
+                        '.gov.au' in domain or domain.endswith('.gov.au') or
+                        '.gov.sg' in domain or domain.endswith('.gov.sg')):
                         content += f"{i}. [{text}]({url}) - Official Government Source\n"
                     else:
                         content += f"{i}. [{text}]({url})\n"
-            
+        
         # Ensure there's a clear executive summary
         if not re.search(r'## Executive Summary|## Summary', content, re.IGNORECASE):
             content = re.sub(r'(# Financial Compliance Evaluation.*?\n\n\*\*Date\*\*:.*?\n\n)', 
@@ -521,7 +627,7 @@ Focus on providing deep insights specific to this company, not generic complianc
         
         return content
     
-    def generate_summary(self, content):
+    def generate_summary(self, content: str) -> str:
         """
         Extract and enhance the executive summary from the compliance evaluation
         
@@ -550,7 +656,7 @@ Focus on providing deep insights specific to this company, not generic complianc
             else:
                 return "Please refer to the full compliance evaluation report for detailed analysis."
     
-    def extract_risk_assessments(self, content):
+    def extract_risk_assessments(self, content: str) -> List[Dict[str, str]]:
         """
         Extract risk assessments from the evaluation
         
@@ -579,7 +685,7 @@ Focus on providing deep insights specific to this company, not generic complianc
                         risk_level = "high"
                     elif re.search(r'low risk|minor', item, re.IGNORECASE):
                         risk_level = "low"
-                        
+                    
                     risks.append({
                         "description": item,
                         "level": risk_level
@@ -602,7 +708,7 @@ Focus on providing deep insights specific to this company, not generic complianc
                     risk_level = "high"
                 elif re.search(r'low|minor', mention, re.IGNORECASE):
                     risk_level = "low"
-                    
+                
                 risks.append({
                     "description": mention.strip(),
                     "level": risk_level
@@ -610,7 +716,7 @@ Focus on providing deep insights specific to this company, not generic complianc
         
         return risks
     
-    def extract_recommendations(self, content):
+    def extract_recommendations(self, content: str) -> List[Dict[str, str]]:
         """
         Extract recommendations from the evaluation
         
@@ -623,7 +729,7 @@ Focus on providing deep insights specific to this company, not generic complianc
         recommendations = []
         
         # Look for a recommendations section
-        rec_section_match = re.search(r'## (?:Recommendations?|Action Items?|Next Steps?|Suggested Actions?)\s*(.*?)(?=\n## |\n# |$)', 
+        rec_section_match = re.search(r'## (?:Recommendations?|Action Items?|Next Steps?|Suggested Actions?|Action Plan)\s*(.*?)(?=\n## |\n# |$)', 
                                     content, re.DOTALL | re.IGNORECASE)
         
         if rec_section_match:
@@ -639,9 +745,9 @@ Focus on providing deep insights specific to this company, not generic complianc
                         priority = "high"
                     elif re.search(r'when possible|consider|may want to|low priority', item, re.IGNORECASE):
                         priority = "low"
-                        
+                    
                     # Try to extract timeframe
-                    timeframe_match = re.search(r'within (\d+\s+(?:days?|weeks?|months?|years?))', item, re.IGNORECASE)
+                    timeframe_match = re.search(r'within (\d+\s+(?:days?|weeks?|months?|years?))|immediately|as soon as possible', item, re.IGNORECASE)
                     timeframe = timeframe_match.group(0) if timeframe_match else "As soon as possible"
                     
                     recommendations.append({
@@ -668,7 +774,7 @@ Focus on providing deep insights specific to this company, not generic complianc
                     priority = "high"
                 elif re.search(r'when possible|consider|may want to', mention, re.IGNORECASE):
                     priority = "low"
-                    
+                
                 recommendations.append({
                     "description": mention.strip(),
                     "priority": priority,
@@ -677,7 +783,7 @@ Focus on providing deep insights specific to this company, not generic complianc
         
         return recommendations
     
-    def extract_requirements(self, content):
+    def extract_requirements(self, content: str) -> List[Dict[str, Any]]:
         """
         Extract compliance requirements from the evaluation
         
@@ -690,7 +796,7 @@ Focus on providing deep insights specific to this company, not generic complianc
         requirements = []
         
         # Look for a requirements section
-        req_section_match = re.search(r'## (?:Requirements|Regulations?|Compliance Requirements?|Regulatory Requirements?)\s*(.*?)(?=\n## |\n# |$)', 
+        req_section_match = re.search(r'## (?:Requirements|Regulations?|Compliance Requirements?|Regulatory Requirements?|Key Regulatory Considerations)\s*(.*?)(?=\n## |\n# |$)', 
                                      content, re.DOTALL | re.IGNORECASE)
         
         if req_section_match:
@@ -700,17 +806,19 @@ Focus on providing deep insights specific to this company, not generic complianc
             req_items = re.findall(r'^(?:\d+\.|\*|\-)\s*(.*?)$', req_text, re.MULTILINE)
             
             if req_items:
-                for item in req_items:
+                for i, item in enumerate(req_items, 1):
                     # Try to determine status
                     status = "not-met"  # Default
-                    if re.search(r'compliant|in compliance|meets? requirements?', item, re.IGNORECASE):
+                    if re.search(r'compliant|in compliance|meets? requirements?|fully implemented', item, re.IGNORECASE):
                         status = "met"
-                    elif re.search(r'partially|in progress|some compliance', item, re.IGNORECASE):
+                    elif re.search(r'partially|in progress|some compliance|partially implemented', item, re.IGNORECASE):
                         status = "partial"
-                        
+                    
                     # Try to determine category
                     category = "General"
-                    for cat in ["Tax", "Reporting", "Financial", "Data Protection", "Employment", "Banking", "Securities", "Environmental", "Health"]:
+                    for cat in ["Tax", "Reporting", "Financial", "Data Protection", "Privacy", "Employment", 
+                              "Banking", "Securities", "AML", "KYC", "Environmental", "Health", "Registration", 
+                              "Licensing", "Capital", "Insurance"]:
                         if re.search(cat, item, re.IGNORECASE):
                             category = cat
                             break
@@ -722,26 +830,42 @@ Focus on providing deep insights specific to this company, not generic complianc
                     elif re.search(r'low risk|minor', item, re.IGNORECASE):
                         risk = "low"
                     
+                    # Extract reg reference if available
+                    reg_reference_match = re.search(r'\[([^\]]+)\]\((https?://[^\)]+)\)', item)
+                    regulatory_references = []
+                    if reg_reference_match:
+                        ref_title = reg_reference_match.group(1)
+                        ref_url = reg_reference_match.group(2)
+                        regulatory_references.append({
+                            "id": f"ref-{i}",
+                            "title": ref_title,
+                            "description": f"Regulatory reference for {ref_title}",
+                            "url": ref_url,
+                            "documentType": "Regulation",
+                            "issuer": self.get_issuer_from_url(ref_url)
+                        })
+                    
                     requirements.append({
+                        "id": f"req-{i}",
                         "title": item[:50] + "..." if len(item) > 50 else item,
                         "description": item,
                         "category": category,
                         "status": status,
                         "risk": risk,
-                        "id": f"req-{len(requirements) + 1}"
+                        "regulatoryReferences": regulatory_references if regulatory_references else None
                     })
             else:
                 # If no bullet points, try to split by sentences
                 sentences = re.split(r'(?<=[.!?])\s+', req_text)
-                for i, sentence in enumerate(sentences):
+                for i, sentence in enumerate(sentences, 1):
                     if len(sentence.strip()) > 10:  # Avoid very short fragments
                         requirements.append({
+                            "id": f"req-{i}",
                             "title": sentence[:50] + "..." if len(sentence) > 50 else sentence,
                             "description": sentence,
                             "category": "General",
                             "status": "not-met",
-                            "risk": "medium",
-                            "id": f"req-{len(requirements) + 1}"
+                            "risk": "medium"
                         })
         
         # If no specific requirements found, create some based on the content
@@ -750,15 +874,170 @@ Focus on providing deep insights specific to this company, not generic complianc
             reg_mentions = re.findall(r'(?:under|according to|compliant with|compliance with|regulated by)\s+([^.]+?)(?:\.|$)', 
                                     content, re.IGNORECASE)
             
-            for i, mention in enumerate(reg_mentions):
+            for i, mention in enumerate(reg_mentions, 1):
                 if len(mention.strip()) > 10:  # Avoid very short fragments
                     requirements.append({
+                        "id": f"req-{i}",
                         "title": mention[:50] + "..." if len(mention) > 50 else mention,
                         "description": mention,
                         "category": "General",
                         "status": "not-met",
-                        "risk": "medium",
-                        "id": f"req-{i + 1}"
+                        "risk": "medium"
                     })
         
         return requirements
+    
+    def extract_regulatory_references(self, content: str) -> List[Dict[str, str]]:
+        """
+        Extract regulatory references from the evaluation
+        
+        Args:
+            content (str): Markdown content
+            
+        Returns:
+            list: Regulatory references
+        """
+        references = []
+        
+        # Look for a references section
+        ref_section_match = re.search(r'## (?:References|Regulatory References|Citations|Sources)\s*(.*?)(?=\n## |\n# |$)', 
+                                    content, re.DOTALL | re.IGNORECASE)
+        
+        if ref_section_match:
+            ref_text = ref_section_match.group(1).strip()
+            
+            # Extract numbered references
+            ref_items = re.findall(r'^(?:\d+\.)\s*(.*?)$', ref_text, re.MULTILINE)
+            
+            for i, item in enumerate(ref_items, 1):
+                # Extract URL if available
+                url_match = re.search(r'\[(.*?)\]\((https?://[^\)]+)\)', item)
+                if url_match:
+                    title = url_match.group(1)
+                    url = url_match.group(2)
+                    
+                    # Try to determine document type
+                    doc_type = "Regulation"
+                    for dtype in ["Act", "Law", "Regulation", "Directive", "Guidelines", "Standard", "Framework", "Rulebook"]:
+                        if re.search(dtype, title, re.IGNORECASE):
+                            doc_type = dtype
+                            break
+                    
+                    references.append({
+                        "id": f"ref-{i}",
+                        "title": title,
+                        "description": item,
+                        "url": url,
+                        "documentType": doc_type,
+                        "issuer": self.get_issuer_from_url(url),
+                        "publishDate": self.extract_date_from_text(item)
+                    })
+        
+        # If no specific references section, extract all links
+        if not references:
+            # Extract all links
+            link_matches = re.findall(r'\[(.*?)\]\((https?://[^\)]+)\)', content)
+            
+            for i, (title, url) in enumerate(link_matches, 1):
+                # Skip any links that don't look like regulatory references
+                if not any(term in title.lower() for term in ["act", "law", "regulation", "directive", "guidelines", 
+                                                           "compliance", "requirements", "rules", "standards"]):
+                    continue
+                
+                # Try to determine document type
+                doc_type = "Regulation"
+                for dtype in ["Act", "Law", "Regulation", "Directive", "Guidelines", "Standard", "Framework", "Rulebook"]:
+                    if re.search(dtype, title, re.IGNORECASE):
+                        doc_type = dtype
+                        break
+                
+                references.append({
+                    "id": f"ref-{i}",
+                    "title": title,
+                    "description": f"Reference to {title}",
+                    "url": url,
+                    "documentType": doc_type,
+                    "issuer": self.get_issuer_from_url(url)
+                })
+        
+        return references
+    
+    def get_issuer_from_url(self, url: str) -> str:
+        """
+        Determine the issuer of a document based on its URL
+        
+        Args:
+            url (str): Document URL
+            
+        Returns:
+            str: Issuer name
+        """
+        try:
+            domain = url.split('/')[2]
+            
+            # Check for common government domains
+            issuer_map = {
+                'sec.gov': 'Securities and Exchange Commission',
+                'consumerfinance.gov': 'Consumer Financial Protection Bureau',
+                'fdic.gov': 'Federal Deposit Insurance Corporation',
+                'fca.org.uk': 'Financial Conduct Authority',
+                'fca.gov.uk': 'Financial Conduct Authority',
+                'bankofengland.co.uk': 'Bank of England',
+                'gov.uk': 'UK Government',
+                'europa.eu': 'European Union',
+                'esma.europa.eu': 'European Securities and Markets Authority',
+                'ec.europa.eu': 'European Commission',
+                'eba.europa.eu': 'European Banking Authority',
+                'mas.gov.sg': 'Monetary Authority of Singapore',
+                'acra.gov.sg': 'Accounting and Corporate Regulatory Authority',
+                'pdpc.gov.sg': 'Personal Data Protection Commission',
+                'asic.gov.au': 'Australian Securities and Investments Commission',
+                'apra.gov.au': 'Australian Prudential Regulation Authority',
+                'oaic.gov.au': 'Office of the Australian Information Commissioner',
+            }
+            
+            # Check for exact matches
+            for key, value in issuer_map.items():
+                if key in domain:
+                    return value
+            
+            # For .gov domains not specifically mapped
+            if '.gov' in domain:
+                parts = domain.split('.')
+                if len(parts) >= 3:
+                    agency = parts[0].upper()
+                    return f"{agency} - Government Agency"
+                return "Government Agency"
+            
+            # For other domains, use the domain name
+            return domain
+        
+        except Exception as e:
+            print(f"Error determining issuer from URL: {e}")
+            return "Unknown Issuer"
+    
+    def extract_date_from_text(self, text: str) -> Optional[str]:
+        """
+        Extract a date from text if present
+        
+        Args:
+            text (str): Text to search for date
+            
+        Returns:
+            str: Date string if found, None otherwise
+        """
+        # Look for common date formats
+        date_patterns = [
+            r'(\d{4}-\d{2}-\d{2})',  # YYYY-MM-DD
+            r'(\d{2}/\d{2}/\d{4})',  # MM/DD/YYYY or DD/MM/YYYY
+            r'(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})',  # DD Mon YYYY
+            r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})',  # Mon DD, YYYY
+            r'(\d{4})'  # Just year
+        ]
+        
+        for pattern in date_patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1)
+        
+        return None

@@ -8,22 +8,35 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import PageTransition from '@/components/PageTransition';
-import { ShieldCheck, Server } from 'lucide-react';
-import { getPerplexityApiKey, savePerplexityApiKey, PYTHON_API_URL } from "@/utils/apiKeys";
+import { ShieldCheck, Server, Brain } from 'lucide-react';
+import { 
+  getPerplexityApiKey, 
+  savePerplexityApiKey, 
+  getMistralApiKey,
+  saveMistralApiKey,
+  PYTHON_API_URL 
+} from "@/utils/apiKeys";
 
 const Settings = () => {
   const [perplexityApiKey, setPerplexityApiKey] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
+  const [mistralApiKey, setMistralApiKey] = useState("");
+  const [isSavingPerplexity, setIsSavingPerplexity] = useState(false);
+  const [isSavingMistral, setIsSavingMistral] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [backendStatus, setBackendStatus] = useState<"connected" | "disconnected" | "checking">("checking");
   const { toast } = useToast();
   const { user } = useAuth();
 
   useEffect(() => {
-    // Try to load the API key from localStorage if available
-    const savedApiKey = getPerplexityApiKey();
-    if (savedApiKey) {
-      setPerplexityApiKey(savedApiKey);
+    // Try to load the API keys from localStorage if available
+    const savedPerplexityApiKey = getPerplexityApiKey();
+    if (savedPerplexityApiKey) {
+      setPerplexityApiKey(savedPerplexityApiKey);
+    }
+    
+    const savedMistralApiKey = getMistralApiKey();
+    if (savedMistralApiKey) {
+      setMistralApiKey(savedMistralApiKey);
     }
     
     // Check backend connection
@@ -53,25 +66,47 @@ const Settings = () => {
     }
   };
 
-  const handleSaveApiKey = () => {
-    setIsSaving(true);
+  const handleSavePerplexityApiKey = () => {
+    setIsSavingPerplexity(true);
     try {
       // Store the API key in localStorage
       savePerplexityApiKey(perplexityApiKey);
       
       toast({
-        title: "API Key Saved",
+        title: "Perplexity API Key Saved",
         description: "Your Perplexity API key has been saved successfully.",
       });
     } catch (error) {
-      console.error("Error saving API key:", error);
+      console.error("Error saving Perplexity API key:", error);
       toast({
         title: "Error",
-        description: "Failed to save your API key. Please try again.",
+        description: "Failed to save your Perplexity API key. Please try again.",
         variant: "destructive",
       });
     } finally {
-      setIsSaving(false);
+      setIsSavingPerplexity(false);
+    }
+  };
+
+  const handleSaveMistralApiKey = () => {
+    setIsSavingMistral(true);
+    try {
+      // Store the API key in localStorage
+      saveMistralApiKey(mistralApiKey);
+      
+      toast({
+        title: "Mistral API Key Saved",
+        description: "Your Mistral API key has been saved successfully.",
+      });
+    } catch (error) {
+      console.error("Error saving Mistral API key:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save your Mistral API key. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingMistral(false);
     }
   };
 
@@ -90,7 +125,7 @@ const Settings = () => {
               Configure API keys used by ComplianceSync to provide regulatory insights.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="perplexity-api-key">Perplexity API Key</Label>
               <Input 
@@ -111,16 +146,51 @@ const Settings = () => {
                   Get an API key
                 </a>
               </p>
+              <div className="flex justify-end">
+                <Button 
+                  onClick={handleSavePerplexityApiKey} 
+                  disabled={isSavingPerplexity || !perplexityApiKey}
+                  size="sm"
+                >
+                  {isSavingPerplexity ? "Saving..." : "Save Perplexity API Key"}
+                </Button>
+              </div>
+            </div>
+            
+            <div className="space-y-2 pt-4 border-t">
+              <div className="flex items-center gap-2">
+                <Brain className="h-4 w-4 text-primary" />
+                <Label htmlFor="mistral-api-key">Mistral AI API Key</Label>
+              </div>
+              <Input 
+                id="mistral-api-key"
+                type="password"
+                value={mistralApiKey}
+                onChange={(e) => setMistralApiKey(e.target.value)}
+                placeholder="Enter your Mistral AI API key"
+              />
+              <p className="text-sm text-muted-foreground">
+                This key is used for OCR and advanced document processing capabilities.
+                <a 
+                  href="https://console.mistral.ai/api-keys/" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="ml-1 text-primary hover:underline"
+                >
+                  Get an API key
+                </a>
+              </p>
+              <div className="flex justify-end">
+                <Button 
+                  onClick={handleSaveMistralApiKey} 
+                  disabled={isSavingMistral || !mistralApiKey}
+                  size="sm"
+                >
+                  {isSavingMistral ? "Saving..." : "Save Mistral API Key"}
+                </Button>
+              </div>
             </div>
           </CardContent>
-          <CardFooter>
-            <Button 
-              onClick={handleSaveApiKey} 
-              disabled={isSaving || !perplexityApiKey}
-            >
-              {isSaving ? "Saving..." : "Save API Key"}
-            </Button>
-          </CardFooter>
         </Card>
         
         <Card>
