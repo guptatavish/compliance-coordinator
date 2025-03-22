@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -9,7 +10,7 @@ import ComplianceCard from '../components/ComplianceCard';
 import StatusChart from '../components/StatusChart';
 import { useAuth } from '../contexts/AuthContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ComplianceResult, fetchSavedComplianceAnalyses } from '@/services/ComplianceService';
+import { ComplianceResult, fetchSavedComplianceAnalyses, fetchLocalComplianceAnalyses } from '@/services/ComplianceService';
 import { useToast } from '@/components/ui/use-toast';
 import { FileText, LineChart, PlusCircle, User2, Wallet } from 'lucide-react';
 import { jurisdictions } from '@/components/JurisdictionSelect';
@@ -34,9 +35,12 @@ const Dashboard: React.FC = () => {
         setIsLoading(true);
         
         const profileData = localStorage.getItem('companyProfile');
-        if (profileData) {
-          setCompanyProfile(JSON.parse(profileData));
+        if (!profileData) {
+          setIsLoading(false);
+          return;
         }
+        
+        setCompanyProfile(JSON.parse(profileData));
         
         const localAnalyses = fetchLocalComplianceAnalyses();
         
@@ -45,18 +49,14 @@ const Dashboard: React.FC = () => {
         } else {
           const analyses = await fetchSavedComplianceAnalyses();
           
-          if (profileData) {
-            const profile = JSON.parse(profileData);
-            const currentJurisdictions = profile.currentJurisdictions || [];
-            
-            const filteredAnalyses = analyses.filter(analysis => 
-              currentJurisdictions.includes(analysis.jurisdictionId)
-            );
-            
-            setSavedAnalyses(filteredAnalyses);
-          } else {
-            setSavedAnalyses(analyses);
-          }
+          const profile = JSON.parse(profileData);
+          const currentJurisdictions = profile.currentJurisdictions || [];
+          
+          const filteredAnalyses = analyses.filter(analysis => 
+            currentJurisdictions.includes(analysis.jurisdictionId)
+          );
+          
+          setSavedAnalyses(filteredAnalyses);
         }
       } catch (error) {
         console.error('Error loading dashboard data:', error);
