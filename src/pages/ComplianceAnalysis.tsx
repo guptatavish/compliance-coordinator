@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -9,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
 import { jurisdictions } from '../components/JurisdictionSelect';
 import { useAuth } from '../contexts/AuthContext';
 import { getPerplexityApiKey, hasPerplexityApiKey } from '@/utils/apiKeys';
