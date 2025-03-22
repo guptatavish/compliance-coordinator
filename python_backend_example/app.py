@@ -45,6 +45,116 @@ def upload_company_documents():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/analyze-regulations', methods=['POST'])
+def analyze_regulations():
+    """Main endpoint for analyzing regulations across multiple jurisdictions"""
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        api_key = data.get('apiKey')
+        if not api_key:
+            return jsonify({"error": "API key is required"}), 400
+        
+        company_profile = data.get('companyProfile')
+        if not company_profile:
+            return jsonify({"error": "Company profile is required"}), 400
+        
+        if not company_profile.get('currentJurisdictions') or len(company_profile.get('currentJurisdictions', [])) == 0:
+            return jsonify({"error": "No jurisdictions selected in company profile"}), 400
+        
+        # Initialize the evaluator with the API key
+        evaluator = PerplexityComplianceEvaluator(api_key)
+        
+        analysis_results = []
+        
+        # Process each jurisdiction
+        for jurisdiction_id in company_profile['currentJurisdictions']:
+            print(f"Analyzing jurisdiction: {jurisdiction_id}")
+            
+            try:
+                # Analyze the jurisdiction
+                jurisdiction_analysis = evaluator.evaluate_jurisdiction(
+                    company_profile=company_profile,
+                    jurisdiction_id=jurisdiction_id
+                )
+                
+                # Extract and validate requirements list
+                requirements_list = jurisdiction_analysis.get("requirementsList", [])
+                if not isinstance(requirements_list, list):
+                    requirements_list = []
+                
+                # Count met and partial requirements
+                met_requirements = sum(1 for req in requirements_list if req.get("status") == "met")
+                partial_requirements = sum(1 for req in requirements_list if req.get("status") == "partial")
+                
+                # Calculate compliance score based on met and partial requirements
+                total_requirements = len(requirements_list)
+                compliance_score = 0
+                
+                if total_requirements > 0:
+                    # Count partial compliance as 0.5 of a requirement
+                    effective_met_requirements = met_requirements + (partial_requirements * 0.5)
+                    compliance_score = round((effective_met_requirements / total_requirements) * 100)
+                
+                # Determine status based on compliance score
+                status = "compliant"
+                if compliance_score < 70:
+                    status = "non-compliant"
+                elif compliance_score < 90:
+                    status = "partial"
+                
+                # Determine risk level
+                risk_level = "low"
+                if compliance_score < 60:
+                    risk_level = "high"
+                elif compliance_score < 80:
+                    risk_level = "medium"
+                
+                # Create jurisdiction analysis result
+                jurisdiction_result = {
+                    "jurisdictionId": jurisdiction_id,
+                    "jurisdictionName": get_jurisdiction_name(jurisdiction_id),
+                    "complianceScore": compliance_score,
+                    "status": status,
+                    "riskLevel": risk_level,
+                    "requirements": {
+                        "total": total_requirements,
+                        "met": met_requirements
+                    },
+                    "requirementsList": requirements_list
+                }
+                
+                analysis_results.append(jurisdiction_result)
+                
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                
+                # Add error result for this jurisdiction
+                analysis_results.append({
+                    "jurisdictionId": jurisdiction_id,
+                    "jurisdictionName": get_jurisdiction_name(jurisdiction_id),
+                    "error": str(e),
+                    "complianceScore": 0,
+                    "status": "non-compliant",
+                    "riskLevel": "high",
+                    "requirements": {
+                        "total": 0,
+                        "met": 0
+                    },
+                    "requirementsList": []
+                })
+        
+        return jsonify({"analysisResults": analysis_results})
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/analyze-compliance', methods=['POST'])
 def analyze_compliance():
     """Analyze company compliance based on profile and jurisdiction"""
@@ -118,13 +228,18 @@ def analyze_compliance():
             # If analysis already has a compliance_score, use it
             compliance_score = analysis['compliance_score']
         
-        # If we still don't have a score, generate one
-        if compliance_score == 0:
-            # Generate a score based on the jurisdiction
-            if jurisdiction.lower() in ['us', 'uk', 'eu', 'ca']:
-                compliance_score = 70  # More complex regulatory environments
-            else:
-                compliance_score = 85  # Less complex regulatory environments
+        # If we still don't have a score, calculate from requirements list
+        requirements_list = analysis.get("requirements", []) if isinstance(analysis.get("requirements"), list) else []
+        
+        if compliance_score == 0 and requirements_list:
+            met_count = sum(1 for req in requirements_list if req.get("status") == "met")
+            partial_count = sum(1 for req in requirements_list if req.get("status") == "partial")
+            total_count = len(requirements_list)
+            
+            if total_count > 0:
+                # Count partial compliance as 0.5 of a requirement
+                effective_met = met_count + (partial_count * 0.5)
+                compliance_score = round((effective_met / total_count) * 100)
         
         # Determine status based on score
         status = "compliant"
@@ -141,7 +256,6 @@ def analyze_compliance():
             risk_level = "medium"
         
         # Extract requirements - ensure it's a list
-        requirements_list = analysis.get("requirements", []) if isinstance(analysis.get("requirements"), list) else []
         met_count = sum(1 for req in requirements_list if req.get("status") == "met")
         
         # Create the response
@@ -235,6 +349,25 @@ def export_report(format):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/export-regulatory-doc', methods=['POST'])
+def export_regulatory_doc():
+    """Export a regulatory reference document"""
+    try:
+        data = request.json
+        jurisdiction = data.get('jurisdiction')
+        doc_type = data.get('docType', 'full')
+        
+        # Implementation would generate a document based on the jurisdiction and doc type
+        # This is a placeholder that returns a simple text document
+        
+        return f"Sample Regulatory Document for {get_jurisdiction_name(jurisdiction)}", 200, {
+            'Content-Type': 'text/plain',
+            'Content-Disposition': f'attachment; filename="regulatory_doc_{jurisdiction}.txt"'
+        }
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 def get_jurisdiction_name(jurisdiction_id):
     """Get a jurisdiction name from its ID"""
     jurisdiction_names = {
@@ -292,4 +425,5 @@ def generate_sample_requirements(jurisdiction, score):
     return requirements
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=5000)
+

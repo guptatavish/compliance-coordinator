@@ -1,3 +1,4 @@
+
 import { getPerplexityApiKey, PYTHON_API_URL } from "../utils/apiKeys";
 
 export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
@@ -148,7 +149,7 @@ export const fetchLocalComplianceAnalyses = (): ComplianceResult[] => {
 };
 
 /**
- * Fetch saved compliance analyses from Supabase
+ * Fetch saved compliance analyses from Python backend
  */
 export const fetchSavedComplianceAnalyses = async (): Promise<ComplianceResult[]> => {
   try {
@@ -160,10 +161,7 @@ export const fetchSavedComplianceAnalyses = async (): Promise<ComplianceResult[]
     
     const companyProfile = JSON.parse(companyProfileStr) as CompanyProfile;
     
-    // We need to create a more robust query in a real-world scenario
-    // For now, we'll just fetch all analyses that match the company name
-    
-    console.log('Fetching saved compliance analyses from Supabase');
+    console.log('Fetching saved compliance analyses from Python backend');
     
     const response = await fetch(`${PYTHON_API_URL}/fetch-saved-analyses`, {
       method: 'POST',
