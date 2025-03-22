@@ -264,7 +264,7 @@ const Reports: React.FC = () => {
     setIsExporting(true);
     
     try {
-      const blob = await exportComplianceReport(report.format, report.data);
+      const blob = await exportComplianceReport(report.data, report.format);
       
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -746,3 +746,4 @@ function Search(props: React.SVGProps<SVGSVGElement>) {
 }
 
 export default Reports;
+

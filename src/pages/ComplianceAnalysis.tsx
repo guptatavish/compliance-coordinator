@@ -42,7 +42,7 @@ interface JurisdictionData {
     met: number;
   };
   recentChanges?: number;
-  requirementsList: Requirement[];
+  requirementsList: Requirement[]; // Now this is required, not optional
   error?: string;
   analysisDate?: string;
   regulatoryReferences?: RegulatoryReference[];
@@ -247,7 +247,7 @@ const ComplianceAnalysis: React.FC = () => {
           const matchingJurisdiction = jurisdictions.find(j => j.id === result.jurisdictionId);
           const enrichedResult: JurisdictionData = {
             ...result,
-            requirementsList: result.requirementsList || [],
+            requirementsList: result.requirementsList || [], // Ensure requirementsList is always initialized
             flag: matchingJurisdiction?.flag || '🏳️',
             analysisDate: currentDate
           };
