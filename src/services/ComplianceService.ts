@@ -580,10 +580,10 @@ const getFallbackRegulatoryDocuments = (jurisdiction: string): RegulatoryReferen
       {
         id: 'uk-dpa-3',
         title: 'UK Data Protection Act 2018',
-        description: 'UK's implementation of GDPR principles',
+        description: 'UK\'s implementation of GDPR principles',
         url: 'https://ico.org.uk/for-organisations/guide-to-data-protection/',
         documentType: 'Legislation',
-        issuer: 'Information Commissioner's Office',
+        issuer: 'Information Commissioner\'s Office',
         publishDate: '2018-05-23'
       }
     ],
@@ -600,7 +600,7 @@ const getFallbackRegulatoryDocuments = (jurisdiction: string): RegulatoryReferen
       {
         id: 'sg-pdpa-2',
         title: 'Personal Data Protection Act',
-        description: 'Singapore's data protection framework',
+        description: 'Singapore\'s data protection framework',
         url: 'https://www.pdpc.gov.sg/Overview-of-PDPA/The-Legislation/Personal-Data-Protection-Act',
         documentType: 'Legislation',
         issuer: 'Personal Data Protection Commission',
