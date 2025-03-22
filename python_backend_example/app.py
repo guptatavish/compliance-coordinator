@@ -97,20 +97,26 @@ def analyze_compliance():
         analysis = evaluator.evaluate_compliance(company_data, documents)
         
         # Extract key information for the response
-        compliance_score = min(100, max(0, analysis.get("risk_assessments", [])))
-        if compliance_score == 0 and analysis.get("risk_assessments"):
-            # Calculate a score based on the risk levels
-            risks = analysis.get("risk_assessments", [])
-            if risks:
-                high_count = sum(1 for risk in risks if risk.get("level") == "high")
-                medium_count = sum(1 for risk in risks if risk.get("level") == "medium")
-                low_count = sum(1 for risk in risks if risk.get("level") == "low")
+        # FIX: Ensure compliance_score is correctly initialized and used
+        compliance_score = 0
+        
+        # Check if risk_assessments exists and is a list
+        if 'risk_assessments' in analysis and isinstance(analysis['risk_assessments'], list):
+            risk_assessments = analysis['risk_assessments']
+            if risk_assessments:
+                # If risk_assessments is not empty, calculate a score based on the risk levels
+                high_count = sum(1 for risk in risk_assessments if risk.get("level") == "high")
+                medium_count = sum(1 for risk in risk_assessments if risk.get("level") == "medium")
+                low_count = sum(1 for risk in risk_assessments if risk.get("level") == "low")
                 
-                total_risks = len(risks)
+                total_risks = len(risk_assessments)
                 if total_risks > 0:
                     # Weighted score calculation
                     compliance_score = 100 - ((high_count * 30 + medium_count * 15 + low_count * 5) / total_risks)
                     compliance_score = max(0, min(100, compliance_score))
+        elif 'compliance_score' in analysis and isinstance(analysis['compliance_score'], (int, float)):
+            # If analysis already has a compliance_score, use it
+            compliance_score = analysis['compliance_score']
         
         # If we still don't have a score, generate one
         if compliance_score == 0:
@@ -134,8 +140,8 @@ def analyze_compliance():
         elif compliance_score < 80:
             risk_level = "medium"
         
-        # Extract requirements
-        requirements_list = analysis.get("requirements", [])
+        # Extract requirements - ensure it's a list
+        requirements_list = analysis.get("requirements", []) if isinstance(analysis.get("requirements"), list) else []
         met_count = sum(1 for req in requirements_list if req.get("status") == "met")
         
         # Create the response
@@ -151,7 +157,7 @@ def analyze_compliance():
             },
             "requirementsList": requirements_list,
             "summary": analysis.get("summary", ""),
-            "recommendations": analysis.get("recommendations", [])
+            "recommendations": analysis.get("recommendations", []) if isinstance(analysis.get("recommendations"), list) else []
         }
         
         return jsonify(response)
