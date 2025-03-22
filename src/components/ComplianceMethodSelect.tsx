@@ -3,7 +3,7 @@ import * as React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { InfoCircle } from "lucide-react";
+import { InfoIcon } from "lucide-react";
 
 interface ComplianceMethodSelectProps {
   useAiJudge: boolean;
@@ -29,7 +29,7 @@ const ComplianceMethodSelect: React.FC<ComplianceMethodSelectProps> = ({
               <div className="flex items-center">
                 <Label htmlFor="use-ai-judge" className="font-medium">Use AI Judge</Label>
                 <div className="ml-2 rounded-full bg-primary/10 p-1">
-                  <InfoCircle className="h-3 w-3 text-primary" />
+                  <InfoIcon className="h-3 w-3 text-primary" />
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">

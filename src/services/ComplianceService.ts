@@ -1,4 +1,5 @@
 import { getPerplexityApiKey, PYTHON_API_URL } from "../utils/apiKeys";
+import { supabase } from "../integrations/supabase/client";
 
 export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
 export type ComplianceLevel = 'high' | 'medium' | 'low';
@@ -657,3 +658,4 @@ export const getRegulationDetails = async (
     return "Sorry, the detailed content for this regulatory document is not available at the moment. Please try again later or visit the official website.";
   }
 };
+
