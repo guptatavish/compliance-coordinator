@@ -138,14 +138,17 @@ serve(async (req) => {
           
           // Count requirements that are met
           const metRequirements = analysisData.requirementsList.filter(req => req.status === 'met').length;
+          const partialRequirements = analysisData.requirementsList.filter(req => req.status === 'partial').length;
           
           // Set requirements counts based on requirementsList
           analysisData.requirements.total = analysisData.requirementsList.length;
           analysisData.requirements.met = metRequirements;
           
-          // Calculate complianceScore based on met/total requirements
+          // Calculate complianceScore based on met/total requirements with partial counting as half
           if (analysisData.requirements.total > 0) {
-            analysisData.complianceScore = Math.round((metRequirements / analysisData.requirements.total) * 100);
+            // Count partial compliance as 0.5 of a requirement
+            const effectiveMetRequirements = metRequirements + (partialRequirements * 0.5);
+            analysisData.complianceScore = Math.round((effectiveMetRequirements / analysisData.requirements.total) * 100);
           } else {
             analysisData.complianceScore = 0;
           }

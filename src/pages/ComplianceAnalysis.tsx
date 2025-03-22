@@ -360,7 +360,7 @@ const ComplianceAnalysis: React.FC = () => {
             {historicalAnalyses.length > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">Analysis History:</span>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {historicalAnalyses.map((analysis, index) => (
                     <Button 
                       key={index} 
