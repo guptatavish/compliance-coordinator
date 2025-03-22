@@ -30,7 +30,6 @@ from datetime import datetime
 import io
 import base64
 from compliance_evaluator import PerplexityComplianceEvaluator
-
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 

@@ -13,8 +13,7 @@ import tempfile
 import PyPDF2
 from pdf2image import convert_from_bytes
 import pytesseract
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
+from mistralai import Mistral
 
 class PerplexityComplianceEvaluator:
     def __init__(self, perplexity_api_key, mistral_api_key=None):
@@ -29,7 +28,7 @@ class PerplexityComplianceEvaluator:
         self.mistral_api_key = mistral_api_key
         self.mistral_client = None
         if mistral_api_key:
-            self.mistral_client = MistralClient(api_key=mistral_api_key)
+            self.mistral_client = Mistral(api_key=mistral_api_key)
         
     def extract_text_from_pdf(self, pdf_content):
         """
@@ -117,11 +116,9 @@ class PerplexityComplianceEvaluator:
             {ocr_text[:4000]}  # Limit text to avoid token limits
             """
             
-            chat_response = self.mistral_client.chat(
+            chat_response = self.mistral_client.chat.complete(
                 model="mistral-large-latest",
-                messages=[
-                    ChatMessage(role="user", content=prompt)
-                ],
+                messages = [{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=4000
             )
@@ -221,7 +218,7 @@ class PerplexityComplianceEvaluator:
                 {chunk}
                 """
                 
-                chat_response = self.mistral_client.chat(
+                chat_response = self.mistral_client.chat.complete(
                     model="mistral-large-latest",
                     messages=[
                         ChatMessage(role="user", content=prompt)
