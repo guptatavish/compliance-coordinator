@@ -1,61 +1,55 @@
 
-import * as React from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { InfoIcon } from "lucide-react";
+import React from 'react';
+import { InfoIcon } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ComplianceMethodSelectProps {
-  useAiJudge: boolean;
-  setUseAiJudge: (value: boolean) => void;
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
 }
 
 const ComplianceMethodSelect: React.FC<ComplianceMethodSelectProps> = ({
-  useAiJudge,
-  setUseAiJudge
+  value,
+  onChange,
+  className,
 }) => {
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg">Analysis Method</CardTitle>
-        <CardDescription>
-          Choose the method to analyze your compliance status
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-4">
-          <div className="flex items-center justify-between space-x-2">
-            <div className="flex-1 space-y-1">
-              <div className="flex items-center">
-                <Label htmlFor="use-ai-judge" className="font-medium">Use AI Judge</Label>
-                <div className="ml-2 rounded-full bg-primary/10 p-1">
-                  <InfoIcon className="h-3 w-3 text-primary" />
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Enables advanced evaluation using the Perplexity API to provide detailed compliance scores and industry-specific recommendations
-              </p>
-            </div>
-            <Switch
-              id="use-ai-judge"
-              checked={useAiJudge}
-              onCheckedChange={setUseAiJudge}
-            />
-          </div>
-          
-          <div className={`rounded-lg bg-muted/50 p-3 ${!useAiJudge && "opacity-70"}`}>
-            <h4 className="text-sm font-medium">AI Judge Features:</h4>
-            <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-              <li>• Industry-specific regulatory insights</li>
-              <li>• More detailed compliance scoring</li>
-              <li>• Enhanced risk assessment</li>
-              <li>• Jurisdiction-specific regulations</li>
-              <li>• Actionable compliance recommendations</li>
-            </ul>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div className={`flex items-center space-x-2 ${className || ''}`}>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="w-[200px]">
+          <SelectValue placeholder="Select compliance method" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="standard">Standard Analysis</SelectItem>
+          <SelectItem value="ai-judge">AI Judge</SelectItem>
+        </SelectContent>
+      </Select>
+      
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <InfoIcon className="h-4 w-4 text-muted-foreground cursor-help" />
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs">
+            <p>Standard Analysis: Uses predefined rules to evaluate compliance</p>
+            <p className="mt-1">AI Judge: Uses AI to make more nuanced compliance judgments</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
   );
 };
 
