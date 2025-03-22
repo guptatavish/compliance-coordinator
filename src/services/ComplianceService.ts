@@ -141,11 +141,11 @@ export const getRegulatoryDocuments = async (jurisdictionId: string): Promise<Re
         if (documents && documents.length > 0) {
           return documents.map(doc => ({
             id: doc.id,
-            title: doc.document_type,
-            description: doc.description || 'Regulatory document',
+            title: doc.title || doc.document_type, // Use document_type as fallback for title
+            description: doc.description || 'Regulatory document', // Provide a default description
             url: doc.file_url || '',
             documentType: doc.document_type,
-            issuer: doc.issuer || 'Regulatory Authority',
+            issuer: doc.issuer || 'Regulatory Authority', // Provide a default issuer
             publishDate: doc.generated_at
           }));
         }
@@ -299,11 +299,11 @@ export const fetchRequiredCertifications = async (companyProfile: any): Promise<
       if (documents && documents.length > 0) {
         return documents.map(doc => ({
           id: doc.id,
-          title: doc.title || doc.document_type,
-          description: doc.description || 'Required certification',
+          title: doc.title || doc.document_type, // Use document_type as fallback
+          description: doc.description || 'Required certification', // Default description
           url: doc.file_url || '',
           documentType: 'certification',
-          issuer: doc.issuer || 'Certification Authority',
+          issuer: doc.issuer || 'Certification Authority', // Default issuer
           publishDate: doc.generated_at
         }));
       }
