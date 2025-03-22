@@ -16,19 +16,23 @@ import {
 } from "@/components/ui/tooltip";
 
 interface ComplianceMethodSelectProps {
-  value: string;
-  onChange: (value: string) => void;
+  useAiJudge: boolean;
+  setUseAiJudge: (value: boolean) => void;
   className?: string;
 }
 
 const ComplianceMethodSelect: React.FC<ComplianceMethodSelectProps> = ({
-  value,
-  onChange,
+  useAiJudge,
+  setUseAiJudge,
   className,
 }) => {
+  const handleValueChange = (value: string) => {
+    setUseAiJudge(value === 'ai-judge');
+  };
+
   return (
     <div className={`flex items-center space-x-2 ${className || ''}`}>
-      <Select value={value} onValueChange={onChange}>
+      <Select value={useAiJudge ? 'ai-judge' : 'standard'} onValueChange={handleValueChange}>
         <SelectTrigger className="w-[200px]">
           <SelectValue placeholder="Select compliance method" />
         </SelectTrigger>

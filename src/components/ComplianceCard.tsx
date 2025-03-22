@@ -1,18 +1,15 @@
-
 import React from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { ArrowRight, CheckCircle, AlertTriangle, AlertCircle, AlertOctagon } from 'lucide-react';
-
-export type ComplianceLevel = 'high' | 'medium' | 'low';
-export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
+import { ComplianceLevel, ComplianceStatus } from '@/services/ComplianceService';
 
 interface ComplianceCardProps {
   jurisdictionId: string;
   jurisdictionName: string;
-  flag?: string; // Made optional to fix the type error
+  flag?: string;
   complianceScore: number;
   status: ComplianceStatus;
   riskLevel: ComplianceLevel;
@@ -90,7 +87,6 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
 
   const statusColor = getStatusColor(status);
   
-  // Helper to get the correct indicator class based on status
   const getIndicatorClass = (status: ComplianceStatus) => {
     switch (status) {
       case 'compliant':
@@ -104,7 +100,6 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
     }
   };
 
-  // If there's an error, display error state
   if (error) {
     return (
       <Card 

@@ -32,12 +32,15 @@ export interface Requirement {
   solution?: string;
   recommendation?: string;
   regulatoryReferences?: RegulatoryReference[];
+  isMet?: boolean;
 }
 
 export interface ComplianceResult {
   jurisdictionId: string;
+  jurisdictionName: string;
   complianceScore: number;
   status: ComplianceStatus;
+  riskLevel: ComplianceLevel;
   requirements: {
     total: number;
     met: number;
@@ -49,7 +52,8 @@ export interface ComplianceResult {
   };
   lastUpdated: string;
   regulatoryReferences?: RegulatoryReference[];
-  requirements?: Requirement[];
+  requirementsList?: Requirement[];
+  flag?: string;
 }
 
 // Mock function for fetching local compliance analyses (from localStorage)
@@ -202,26 +206,30 @@ export const exportComplianceReport = async (format: string, data: any): Promise
 
 // Function to analyze compliance with Python backend
 export const analyzeComplianceWithPython = async (
-  companyProfile: any, 
-  jurisdiction: string, 
-  documents: any[], 
-  apiKey: string,
-  useAiJudge?: boolean,
-  mistralApiKey?: string
+  jurisdictionId: string,
+  useAiJudge: boolean = false
 ): Promise<ComplianceResult> => {
   return await new ComplianceService().analyzeRegulations(
-    companyProfile, 
-    apiKey, 
-    mistralApiKey, 
-    documents, 
+    jurisdictionId,
     useAiJudge
   );
 };
 
 class ComplianceService {
-  async analyzeRegulations(companyProfile: any, apiKey: string, mistralApiKey?: string, uploadedDocuments?: any[], useAiJudge?: boolean) {
+  async analyzeRegulations(jurisdictionId: string, useAiJudge: boolean = false) {
     try {
       console.log('Analyzing regulations with Python backend directly');
+      // Get company profile from localStorage
+      const profileData = localStorage.getItem('companyProfile');
+      if (!profileData) {
+        throw new Error("Company profile not found");
+      }
+      
+      const companyProfile = JSON.parse(profileData);
+      // Get API keys from localStorage
+      const apiKey = localStorage.getItem('perplexity_api_key') || '';
+      const mistralApiKey = localStorage.getItem('mistral_api_key') || '';
+      
       const response = await fetch(`${PYTHON_API_URL}/analyze-regulations`, {
         method: 'POST',
         headers: {
@@ -232,7 +240,7 @@ class ComplianceService {
           companyProfile,
           apiKey,
           mistralApiKey,
-          uploadedDocuments: uploadedDocuments || [],
+          jurisdictionId,
           useAiJudge: useAiJudge || false
         })
       });
