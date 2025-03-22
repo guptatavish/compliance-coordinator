@@ -32,6 +32,13 @@ serve(async (req) => {
 
     console.log("Analyzing regulations for company:", companyProfile.companyName);
     
+    if (!companyProfile.currentJurisdictions || companyProfile.currentJurisdictions.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "No jurisdictions selected in company profile" }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
     const analysisResults = [];
     
     // Process each jurisdiction
@@ -78,6 +85,7 @@ serve(async (req) => {
         
         Include at least 8-12 specific requirements across 4-6 categories.
         Make the assessment realistic based on the company's industry and size.
+        Base your analysis on the company profile data provided, including industry, size, and description.
       `;
       
       try {
@@ -116,6 +124,21 @@ serve(async (req) => {
           // Validate complianceScore is a number, not a list/array
           if (analysisData.complianceScore && Array.isArray(analysisData.complianceScore)) {
             analysisData.complianceScore = 75; // Default to a middle value if array is received
+          }
+          
+          // Make sure complianceScore is a number
+          if (typeof analysisData.complianceScore !== 'number') {
+            analysisData.complianceScore = parseInt(analysisData.complianceScore) || 75;
+          }
+          
+          // Validate requirements object
+          if (!analysisData.requirements || typeof analysisData.requirements !== 'object') {
+            analysisData.requirements = { total: 0, met: 0 };
+          }
+          
+          // Validate requirementsList is an array
+          if (!Array.isArray(analysisData.requirementsList)) {
+            analysisData.requirementsList = [];
           }
           
           // Add jurisdiction ID to the response

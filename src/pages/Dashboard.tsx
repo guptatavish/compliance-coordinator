@@ -39,7 +39,19 @@ const Dashboard: React.FC = () => {
         }
         
         const analyses = await fetchSavedComplianceAnalyses();
-        setSavedAnalyses(analyses);
+        
+        if (profileData) {
+          const profile = JSON.parse(profileData);
+          const currentJurisdictions = profile.currentJurisdictions || [];
+          
+          const filteredAnalyses = analyses.filter(analysis => 
+            currentJurisdictions.includes(analysis.jurisdictionId)
+          );
+          
+          setSavedAnalyses(filteredAnalyses);
+        } else {
+          setSavedAnalyses(analyses);
+        }
       } catch (error) {
         console.error('Error loading dashboard data:', error);
         toast({

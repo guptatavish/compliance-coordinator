@@ -5,8 +5,6 @@ import Layout from '../components/Layout';
 import CompanyForm from '../components/CompanyForm';
 import { useAuth } from '../contexts/AuthContext';
 import ProtectedRoute from '../components/ProtectedRoute';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ShieldAlert } from 'lucide-react';
 
 const CompanyProfile: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
@@ -19,15 +17,6 @@ const CompanyProfile: React.FC = () => {
     }
   }, [isAuthenticated, navigate]);
 
-  // Check user role for access control (if roles are implemented)
-  const hasAccess = () => {
-    if (!user || !user.role) return true; // Default to allowing access if role system isn't active
-    
-    // Allow only specific roles to edit company profile
-    const allowedRoles = ['admin', 'compliance_officer', 'finance_manager', 'executive'];
-    return allowedRoles.includes(user.role);
-  };
-
   return (
     <ProtectedRoute>
       <Layout showFooter={false}>
@@ -39,20 +28,9 @@ const CompanyProfile: React.FC = () => {
             </p>
           </div>
           
-          {!hasAccess() ? (
-            <Alert variant="destructive" className="mb-6">
-              <ShieldAlert className="h-4 w-4" />
-              <AlertTitle>Access Restricted</AlertTitle>
-              <AlertDescription>
-                You do not have permission to edit company profile information. 
-                Please contact your administrator for assistance.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <div className="max-w-4xl mx-auto">
-              <CompanyForm />
-            </div>
-          )}
+          <div className="max-w-4xl mx-auto">
+            <CompanyForm />
+          </div>
         </div>
       </Layout>
     </ProtectedRoute>
