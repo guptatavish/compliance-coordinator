@@ -125,6 +125,49 @@ export const uploadCompanyDocuments = async (
 };
 
 /**
+ * Fetch saved compliance analyses from Supabase
+ */
+export const fetchSavedComplianceAnalyses = async (): Promise<ComplianceResult[]> => {
+  try {
+    // Get company profile from localStorage
+    const companyProfileStr = localStorage.getItem('companyProfile');
+    if (!companyProfileStr) {
+      return [];
+    }
+    
+    const companyProfile = JSON.parse(companyProfileStr) as CompanyProfile;
+    
+    // We need to create a more robust query in a real-world scenario
+    // For now, we'll just fetch all analyses that match the company name
+    
+    console.log('Fetching saved compliance analyses from Supabase');
+    
+    const response = await fetch(`${PYTHON_API_URL}/fetch-saved-analyses`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        companyName: companyProfile.companyName
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch saved analyses: ${response.status} - ${errorText}`);
+    }
+    
+    const result = await response.json();
+    console.log('Fetched saved compliance analyses:', result);
+    
+    return result.analyses || [];
+  } catch (error) {
+    console.error('Error fetching saved compliance analyses:', error);
+    return [];
+  }
+};
+
+/**
  * Analyzes company compliance based on company profile and jurisdiction
  */
 export const analyzeComplianceWithPython = async (
