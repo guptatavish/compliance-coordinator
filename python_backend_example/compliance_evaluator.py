@@ -1,3 +1,4 @@
+
 import os
 import json
 import time
@@ -608,7 +609,7 @@ Be thorough in your research and analysis. Use current regulations and requireme
             if target_juris:
                 target_jurisdictions = f"\n## Expansion Plans\n\nThe company is planning to expand to the following jurisdictions: {', '.join(target_juris)}.\n"
         
-        # Construct the query for Perplexity API
+        # Construct the query for Perplexity API to evaluate compliance
         query = f"""
 # Financial Compliance Evaluation Request
 
@@ -617,24 +618,30 @@ Be thorough in your research and analysis. Use current regulations and requireme
 {document_section}
 {target_jurisdictions}
 
-## Evaluation Request
+## Evaluation Request - COMPLIANCE SCORE CALCULATION
 
-I need a detailed markdown report on this company's compliance with financial regulations in {country or company_location or "its operating jurisdictions"}. The report should:
+I need a detailed compliance score assessment for this company based on the information provided. Please:
 
-1. Identify all relevant financial regulations for this specific company based on its location, industry, and size
-2. Analyze the company's current compliance status for each regulation
-3. Identify specific compliance gaps and risks unique to this company's situation
-4. Provide detailed, actionable recommendations with implementation steps
-5. Include citations to official government websites and regulatory resources
+1. Evaluate the company's compliance with financial regulations in {country or company_location or "its operating jurisdictions"}
+2. Calculate a numerical compliance score from 0-100 based on how well the company meets the relevant regulatory requirements
+3. Break down the score by major compliance categories (tax, reporting, employment, etc.)
+4. Identify specific compliance gaps and risks
+5. For each requirement, state whether it is:
+   - Met (fully compliant)
+   - Partially met (partial compliance)
+   - Not met (non-compliant)
+6. Include a detailed explanation of how you arrived at the overall score
 
-Please create a comprehensive evaluation focused on both current compliance issues and preventative measures. The report should be formatted as a professional Markdown document with proper headings, sections, and citation links.
+FORMAT YOUR RESPONSE AS FOLLOWS:
+1. First provide a short executive summary with the overall compliance score
+2. List each major regulatory requirement with its individual score and compliance status
+3. Provide a detailed breakdown of how you calculated the overall score
+4. Conclude with specific recommendations
 
-IMPORTANT: Only cite official government websites, regulatory bodies, and authoritative legal sources. Do not make up or assume information not provided about the company. If more information is needed about a specific area, note this as a recommendation for further internal review.
-
-Focus on providing deep insights specific to this company, not generic compliance advice. All recommendations should address the company's exact situation based on the data provided.
+IMPORTANT: Base your evaluation only on the data provided about the company and current regulations. If information is missing to evaluate a specific requirement, note this and make a reasonable assumption based on industry standards, but reduce the confidence level for that particular score.
         """
         
-        print("Evaluating financial compliance...")
+        print("Evaluating financial compliance with Perplexity API as judge...")
         
         try:
             # Query the Perplexity API
@@ -646,29 +653,41 @@ Focus on providing deep insights specific to this company, not generic complianc
             # Process the content to ensure proper Markdown formatting
             processed_content = self.process_markdown_content(content, company_name, today)
             
-            # Generate a summary section
-            summary = self.generate_summary(processed_content)
-            
             # Extract key data from the content
+            compliance_score = self.extract_compliance_score(processed_content)
+            compliance_status = self.determine_compliance_status(compliance_score)
+            risk_level = self.determine_risk_level(compliance_score)
             risk_assessments = self.extract_risk_assessments(processed_content)
             recommendations = self.extract_recommendations(processed_content)
             requirements = self.extract_requirements(processed_content)
             regulatory_references = self.extract_regulatory_references(processed_content)
+            summary = self.generate_summary(processed_content)
             
             # Calculate execution time
             execution_time = time.time() - start_time
             print(f"Compliance evaluation completed in {execution_time:.2f} seconds")
+            print(f"Calculated compliance score: {compliance_score}")
+            print(f"Compliance status: {compliance_status}")
+            print(f"Risk level: {risk_level}")
             
             # Return results
             return {
+                "jurisdictionId": company_data.get('currentJurisdictions', ['unknown'])[0],
+                "jurisdictionName": country or "Unknown",
                 "company_name": company_name,
-                "evaluation_date": datetime.now().isoformat(),
-                "content": processed_content,
+                "complianceScore": compliance_score,
+                "status": compliance_status,
+                "riskLevel": risk_level,
+                "requirements": {
+                    "total": len(requirements),
+                    "met": sum(1 for req in requirements if req.get("status") == "met")
+                },
+                "requirementsList": requirements,
                 "summary": summary,
-                "risk_assessments": risk_assessments,
+                "fullReport": processed_content,
                 "recommendations": recommendations,
-                "requirements": requirements,
-                "regulatory_references": regulatory_references,
+                "timestamp": int(datetime.now().timestamp() * 1000),
+                "regulatoryReferences": regulatory_references,
                 "execution_time": execution_time
             }
         
@@ -679,10 +698,101 @@ Focus on providing deep insights specific to this company, not generic complianc
             
             return {
                 "error": str(e),
+                "jurisdictionId": company_data.get('currentJurisdictions', ['unknown'])[0],
+                "jurisdictionName": country or "Unknown",
                 "company_name": company_name,
-                "evaluation_date": datetime.now().isoformat(),
-                "content": "Failed to generate compliance evaluation. Please check the API key and try again."
+                "complianceScore": 0,
+                "status": "non-compliant",
+                "riskLevel": "high",
+                "requirements": {
+                    "total": 0,
+                    "met": 0
+                },
+                "requirementsList": [],
+                "timestamp": int(datetime.now().timestamp() * 1000),
+                "error_details": traceback.format_exc()
             }
+    
+    def extract_compliance_score(self, content: str) -> int:
+        """
+        Extract the compliance score from the evaluation content
+        
+        Args:
+            content (str): Evaluation content
+            
+        Returns:
+            int: Compliance score (0-100)
+        """
+        # Look for explicit score mentions
+        score_patterns = [
+            r'compliance score:?\s*(\d{1,3})(?:\s*\/\s*100)?',
+            r'overall compliance score:?\s*(\d{1,3})(?:\s*\/\s*100)?',
+            r'overall score:?\s*(\d{1,3})(?:\s*\/\s*100)?',
+            r'score:?\s*(\d{1,3})(?:\s*\/\s*100)?',
+            r'compliance rating:?\s*(\d{1,3})(?:\s*\/\s*100)?',
+            r'compliance assessment:?\s*(\d{1,3})(?:\s*\/\s*100)?',
+            r'scored\s*(\d{1,3})(?:\s*\/\s*100)?'
+        ]
+        
+        for pattern in score_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            if matches:
+                try:
+                    score = int(matches[0])
+                    # Validate score is between 0-100
+                    if 0 <= score <= 100:
+                        return score
+                except (ValueError, IndexError):
+                    continue
+        
+        # If no explicit score, approximate one based on compliance language
+        if re.search(r'fully compliant|100% compliant|complete compliance', content, re.IGNORECASE):
+            return 95
+        elif re.search(r'mostly compliant|high compliance|well compliant', content, re.IGNORECASE):
+            return 85
+        elif re.search(r'partially compliant|moderate compliance', content, re.IGNORECASE):
+            return 65
+        elif re.search(r'minimally compliant|low compliance', content, re.IGNORECASE):
+            return 35
+        elif re.search(r'non-compliant|not compliant|zero compliance', content, re.IGNORECASE):
+            return 15
+        
+        # Default middle score if unable to determine
+        return 50
+        
+    def determine_compliance_status(self, score: int) -> str:
+        """
+        Determine compliance status based on score
+        
+        Args:
+            score (int): Compliance score
+            
+        Returns:
+            str: Compliance status
+        """
+        if score >= 80:
+            return "compliant"
+        elif score >= 50:
+            return "partial"
+        else:
+            return "non-compliant"
+            
+    def determine_risk_level(self, score: int) -> str:
+        """
+        Determine risk level based on compliance score
+        
+        Args:
+            score (int): Compliance score
+            
+        Returns:
+            str: Risk level
+        """
+        if score >= 80:
+            return "low"
+        elif score >= 50:
+            return "medium"
+        else:
+            return "high"
     
     def process_markdown_content(self, content: str, company_name: str, date: str) -> str:
         """
@@ -961,20 +1071,28 @@ Focus on providing deep insights specific to this company, not generic complianc
                         "category": category,
                         "status": status,
                         "risk": risk,
-                        "regulatoryReferences": regulatory_references if regulatory_references else None
+                        "regulatoryReferences": regulatory_references if regulatory_references else None,
+                        "isMet": status == "met"
                     })
             else:
                 # If no bullet points, try to split by sentences
                 sentences = re.split(r'(?<=[.!?])\s+', req_text)
                 for i, sentence in enumerate(sentences, 1):
                     if len(sentence.strip()) > 10:  # Avoid very short fragments
+                        status = "not-met"  # Default
+                        if re.search(r'compliant|in compliance|meets? requirements?|fully implemented', sentence, re.IGNORECASE):
+                            status = "met"
+                        elif re.search(r'partially|in progress|some compliance|partially implemented', sentence, re.IGNORECASE):
+                            status = "partial"
+                            
                         requirements.append({
                             "id": f"req-{i}",
                             "title": sentence[:50] + "..." if len(sentence) > 50 else sentence,
                             "description": sentence,
                             "category": "General",
-                            "status": "not-met",
-                            "risk": "medium"
+                            "status": status,
+                            "risk": "medium",
+                            "isMet": status == "met"
                         })
         
         # If no specific requirements found, create some based on the content
@@ -991,7 +1109,8 @@ Focus on providing deep insights specific to this company, not generic complianc
                         "description": mention,
                         "category": "General",
                         "status": "not-met",
-                        "risk": "medium"
+                        "risk": "medium",
+                        "isMet": False
                     })
         
         return requirements
