@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,8 +10,8 @@ export type ComplianceStatus = 'compliant' | 'partial' | 'non-compliant';
 
 interface ComplianceCardProps {
   jurisdictionId: string;
-  jurisdictionName: string;
-  flag?: string; // Made optional to fix the type error
+  jurisdictionName?: string; // Made optional since it might not be provided
+  flag?: string; 
   complianceScore: number;
   status: ComplianceStatus;
   riskLevel: ComplianceLevel;
@@ -27,7 +26,7 @@ interface ComplianceCardProps {
 
 const ComplianceCard: React.FC<ComplianceCardProps> = ({
   jurisdictionId,
-  jurisdictionName,
+  jurisdictionName = 'Unknown Jurisdiction', // Default value to prevent undefined
   flag,
   complianceScore,
   status,
@@ -37,7 +36,7 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
   error,
   onClick,
 }) => {
-  const getStatusColor = (status: ComplianceStatus) => {
+  const getStatusColor = (status: ComplianceStatus): string => {
     switch (status) {
       case 'compliant':
         return 'success';
@@ -115,7 +114,7 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
         <CardHeader className="pb-2">
           <div className="flex justify-between items-start">
             <div className="flex items-center space-x-2">
-              <span className="text-2xl">{flag}</span>
+              {flag && <span className="text-2xl">{flag}</span>}
               <CardTitle className="text-lg">{jurisdictionName}</CardTitle>
             </div>
           </div>
@@ -150,7 +149,7 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
           <div className="flex items-center space-x-2">
-            <span className="text-2xl">{flag}</span>
+            {flag && <span className="text-2xl">{flag}</span>}
             <CardTitle className="text-lg">{jurisdictionName}</CardTitle>
           </div>
           {recentChanges && recentChanges > 0 && (
@@ -166,27 +165,22 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
           <div className="space-y-2">
             <div className="flex justify-between">
               <span className="text-sm font-medium">Compliance Score</span>
-              <span 
-                className={`text-sm font-semibold text-${statusColor}-500`}
-              >
+              <span className={`text-sm font-semibold`}>
                 {complianceScore}%
               </span>
             </div>
             <Progress 
               value={complianceScore} 
               className="h-2 bg-muted" 
-              indicatorClassName={getIndicatorClass(status)}
             />
           </div>
           
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <span 
-                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-${statusColor}-100 text-${statusColor}-500`}
-              >
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium`}>
                 {getStatusIcon(status)}
                 <span className="ml-1 capitalize">
-                  {status.replace('-', ' ')}
+                  {status && status.replace('-', ' ')}
                 </span>
               </span>
             </div>
@@ -196,7 +190,7 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
           <div className="flex justify-between items-center text-sm">
             <span>Requirements Met:</span>
             <span className="font-medium">
-              {requirements.met} / {requirements.total}
+              {requirements?.met || 0} / {requirements?.total || 0}
             </span>
           </div>
         </div>

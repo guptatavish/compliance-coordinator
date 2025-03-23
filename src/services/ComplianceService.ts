@@ -26,6 +26,7 @@ export interface ComplianceResult {
   requirements: {
     total: number;
     met: number;
+    items?: Array<{ id: string; status: string; title?: string; description?: string }>;
   };
   requirementsList: Requirement[];
   recentChanges?: number;

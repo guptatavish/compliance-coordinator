@@ -109,8 +109,28 @@ const Dashboard: React.FC = () => {
     let met = 0;
     
     savedAnalyses.forEach(analysis => {
-      total += analysis.requirements.total;
-      met += analysis.requirements.met;
+      if (!analysis.requirements) return;
+      
+      // Type guard to check if requirements has total and met properties
+      const hasCountProps = 
+        typeof analysis.requirements === 'object' && 
+        'total' in analysis.requirements && 
+        'met' in analysis.requirements;
+        
+      // Type guard to check if requirements has an items array
+      const hasItemsArray = 
+        typeof analysis.requirements === 'object' && 
+        'items' in analysis.requirements && 
+        Array.isArray(analysis.requirements.items);
+      
+      if (hasCountProps) {
+        total += analysis.requirements.total;
+        met += analysis.requirements.met;
+      } else if (hasItemsArray) {
+        const items = analysis.requirements.items;
+        total += items.length;
+        met += items.filter(req => req.status === 'met' || req.status === 'compliant').length;
+      }
     });
     
     return { total, met, percentage: total > 0 ? Math.round((met / total) * 100) : 0 };
