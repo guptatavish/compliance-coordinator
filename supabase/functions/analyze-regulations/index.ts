@@ -32,15 +32,19 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Forwarding regulation analysis request to Python backend at ${PYTHON_API_URL}/analyze-regulations`);
+    console.log(`Forwarding compliance evaluation request to Python backend at ${PYTHON_API_URL}/analyze-compliance`);
     
     // Forward the request to the Python backend
-    const pythonResponse = await fetch(`${PYTHON_API_URL}/analyze-regulations`, {
+    const pythonResponse = await fetch(`${PYTHON_API_URL}/analyze-compliance`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ companyProfile, apiKey })
+      body: JSON.stringify({ 
+        companyProfile, 
+        apiKey,
+        usePerplexity: true // Flag to indicate the Python backend should use Perplexity
+      })
     });
     
     if (!pythonResponse.ok) {

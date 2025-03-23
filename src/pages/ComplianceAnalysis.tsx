@@ -14,7 +14,16 @@ import { getPerplexityApiKey, hasPerplexityApiKey } from '@/utils/apiKeys';
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { AlertTriangle, BookOpen, Calendar, CheckSquare, Clock, Download, FileText, History, InfoIcon, LineChart, RefreshCw } from 'lucide-react';
-import { analyzeComplianceWithPython, checkPythonBackendHealth, ComplianceStatus, ComplianceLevel, Requirement, ComplianceResult } from '../services/ComplianceService';
+import { 
+  analyzeComplianceWithPython, 
+  checkPythonBackendHealth, 
+  ComplianceStatus, 
+  ComplianceLevel, 
+  Requirement, 
+  ComplianceResult, 
+  exportFullComplianceReport, 
+  RegulatoryReference 
+} from '../services/ComplianceService';
 
 interface JurisdictionData {
   jurisdictionId: string;
@@ -31,6 +40,7 @@ interface JurisdictionData {
   requirementsList: Requirement[];
   error?: string;
   analysisDate?: string;
+  regulatoryReferences?: RegulatoryReference[];
 }
 
 const ComplianceAnalysis: React.FC = () => {
@@ -44,6 +54,7 @@ const ComplianceAnalysis: React.FC = () => {
   const [pythonBackendAvailable, setPythonBackendAvailable] = useState<boolean | null>(null);
   const [historicalAnalyses, setHistoricalAnalyses] = useState<JurisdictionData[][]>([]);
   const [activeHistoryIndex, setActiveHistoryIndex] = useState(0);
+  const [isExporting, setIsExporting] = useState(false);
   
   const hasCompanyProfile = !!localStorage.getItem('companyProfile');
   const companyProfileData = hasCompanyProfile 
@@ -255,6 +266,47 @@ const ComplianceAnalysis: React.FC = () => {
     if (index >= 0 && index < historicalAnalyses.length) {
       setJurisdictionsData(historicalAnalyses[index]);
       setActiveHistoryIndex(index);
+    }
+  };
+
+  const handleExportFullReport = async () => {
+    if (!selectedJurisdiction) {
+      toast({
+        title: "No Jurisdiction Selected",
+        description: "Please select a jurisdiction first to export its report.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsExporting(true);
+    
+    try {
+      const blob = await exportFullComplianceReport(selectedJurisdiction);
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `compliance_report_${selectedJurisdiction}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Report Downloaded",
+        description: "Full compliance report has been downloaded successfully.",
+      });
+    } catch (error) {
+      console.error("Error exporting report:", error);
+      toast({
+        title: "Export Failed",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -470,9 +522,23 @@ const ComplianceAnalysis: React.FC = () => {
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold">Jurisdictions</h2>
-                <Button variant="outline" size="sm">
-                  <Download className="mr-2 h-4 w-4" />
-                  Export Analysis
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  disabled={!selectedJurisdiction || isExporting}
+                  onClick={handleExportFullReport}
+                >
+                  {isExporting ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="mr-2 h-4 w-4" />
+                      Export Full Report
+                    </>
+                  )}
                 </Button>
               </div>
               
@@ -670,27 +736,56 @@ const ComplianceAnalysis: React.FC = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {[1, 2, 3].map((i) => (
-                        <div key={i} className="flex items-start p-3 border rounded-lg">
-                          <div className="p-2 rounded-full mr-3 bg-primary/10">
-                            <BookOpen className="h-4 w-4 text-primary" />
-                          </div>
-                          <div>
-                            <h4 className="font-medium text-sm">
-                              {selectedData.jurisdictionName} Financial Regulation Document {i}
-                            </h4>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Official regulatory documentation for financial operations in {selectedData.jurisdictionName}
-                            </p>
-                            <div className="mt-2">
-                              <Button variant="link" size="sm" className="h-auto p-0 text-primary">
-                                <FileText className="h-3 w-3 mr-1" />
-                                View Document
-                              </Button>
+                      {selectedData.regulatoryReferences && selectedData.regulatoryReferences.length > 0 ? (
+                        selectedData.regulatoryReferences.map((ref) => (
+                          <div key={ref.id} className="flex items-start p-3 border rounded-lg">
+                            <div className="p-2 rounded-full mr-3 bg-primary/10">
+                              <BookOpen className="h-4 w-4 text-primary" />
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-sm">{ref.title}</h4>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {ref.type === 'government' ? 'Official government source' : 'Regulatory resource'}
+                              </p>
+                              {ref.url && (
+                                <div className="mt-2">
+                                  <Button 
+                                    variant="link" 
+                                    size="sm" 
+                                    className="h-auto p-0 text-primary"
+                                    onClick={() => window.open(ref.url, '_blank')}
+                                  >
+                                    <FileText className="h-3 w-3 mr-1" />
+                                    View Document
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))
+                      ) : (
+                        [1, 2, 3].map((i) => (
+                          <div key={i} className="flex items-start p-3 border rounded-lg">
+                            <div className="p-2 rounded-full mr-3 bg-primary/10">
+                              <BookOpen className="h-4 w-4 text-primary" />
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-sm">
+                                {selectedData.jurisdictionName} Financial Regulation Document {i}
+                              </h4>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Official regulatory documentation for financial operations in {selectedData.jurisdictionName}
+                              </p>
+                              <div className="mt-2">
+                                <Button variant="link" size="sm" className="h-auto p-0 text-primary">
+                                  <FileText className="h-3 w-3 mr-1" />
+                                  View Document
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </CardContent>
                 </Card>
