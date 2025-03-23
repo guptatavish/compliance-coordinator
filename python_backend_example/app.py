@@ -62,7 +62,16 @@ def analyze_regulations():
         if not company_profile:
             return jsonify({"error": "Company profile is required"}), 400
         
-        if not company_profile.get('currentJurisdictions') or len(company_profile.get('currentJurisdictions', [])) == 0:
+        # Safely handle jurisdictions, ensuring we have a valid list
+        jurisdictions = []
+        if 'currentJurisdictions' in company_profile:
+            if isinstance(company_profile['currentJurisdictions'], list):
+                jurisdictions = company_profile['currentJurisdictions']
+            elif company_profile['currentJurisdictions']:
+                # If it's not a list but has a value, convert to a single-item list
+                jurisdictions = [str(company_profile['currentJurisdictions'])]
+        
+        if not jurisdictions:
             return jsonify({"error": "No jurisdictions selected in company profile"}), 400
         
         # Initialize the evaluator with the API key
@@ -71,7 +80,9 @@ def analyze_regulations():
         analysis_results = []
         
         # Process each jurisdiction
-        for jurisdiction_id in company_profile['currentJurisdictions']:
+        for jurisdiction_id in jurisdictions:
+            # Ensure jurisdiction_id is a string
+            jurisdiction_id = str(jurisdiction_id)
             print(f"Analyzing jurisdiction: {jurisdiction_id}")
             
             try:
@@ -178,8 +189,11 @@ def analyze_compliance():
         
         documents = data.get('documents', [])
         
+        # Ensure jurisdiction is a string for our processing
+        jurisdiction_str = normalize_jurisdiction(jurisdiction)
+            
         # Print info about the request
-        print(f"Analyzing compliance for {company_profile.get('companyName', 'Unknown Company')} in {jurisdiction}")
+        print(f"Analyzing compliance for {company_profile.get('companyName', 'Unknown Company')} in {jurisdiction_str}")
         print(f"Company profile: {json.dumps(company_profile, indent=2)}")
         print(f"Documents count: {len(documents)}")
         
@@ -193,7 +207,7 @@ def analyze_compliance():
             "companySize": company_profile.get('companySize', ''),
             "industry": company_profile.get('industry', ''),
             "description": company_profile.get('description', ''),
-            "country": jurisdiction,  # Use the jurisdiction as the country
+            "country": jurisdiction_str,
             "registration_number": company_profile.get('registrationNumber', ''),
             "address": company_profile.get('address', ''),
             "website": company_profile.get('website', ''),
@@ -203,20 +217,10 @@ def analyze_compliance():
             "business_type": company_profile.get('businessType', '')
         }
         
-        # FIX: Safe handling of current_jurisdictions list
-        country = jurisdiction
-        if isinstance(jurisdiction, list) and len(jurisdiction) > 0:
-            # If jurisdiction is a list, use the first item
-            country = str(jurisdiction[0])
-        elif not isinstance(jurisdiction, str):
-            # If it's neither a string nor a list, convert to string
-            country = str(jurisdiction)
-        
         # Now use this data when evaluating compliance
         analysis = evaluator.evaluate_compliance(company_data, documents)
         
         # Extract key information for the response
-        # FIX: Ensure compliance_score is correctly initialized and used
         compliance_score = 0
         
         # Check if risk_assessments exists and is a list
@@ -270,7 +274,7 @@ def analyze_compliance():
         # Create the response
         response = {
             "jurisdictionId": jurisdiction,
-            "jurisdictionName": get_jurisdiction_name(country),  # FIX: Use the processed country string here
+            "jurisdictionName": get_jurisdiction_name(jurisdiction_str),
             "complianceScore": int(compliance_score),
             "status": status,
             "riskLevel": risk_level,
@@ -366,34 +370,41 @@ def export_regulatory_doc():
         jurisdiction = data.get('jurisdiction')
         doc_type = data.get('docType', 'full')
         
-        # Check if jurisdiction is a list and convert it to a string
-        if isinstance(jurisdiction, list) and len(jurisdiction) > 0:
-            jurisdiction = jurisdiction[0]
-        elif not isinstance(jurisdiction, str):
-            jurisdiction = str(jurisdiction)
+        # Normalize jurisdiction to a string
+        jurisdiction_str = normalize_jurisdiction(jurisdiction)
             
         # Implementation would generate a document based on the jurisdiction and doc type
         # This is a placeholder that returns a simple text document
         
-        return f"Sample Regulatory Document for {get_jurisdiction_name(jurisdiction)}", 200, {
+        return f"Sample Regulatory Document for {get_jurisdiction_name(jurisdiction_str)}", 200, {
             'Content-Type': 'text/plain',
-            'Content-Disposition': f'attachment; filename="regulatory_doc_{jurisdiction}.txt"'
+            'Content-Disposition': f'attachment; filename="regulatory_doc_{jurisdiction_str}.txt"'
         }
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+def normalize_jurisdiction(jurisdiction):
+    """
+    Normalize jurisdiction to a string regardless of input type
+    Returns a string representation of the jurisdiction
+    """
+    if isinstance(jurisdiction, list):
+        if len(jurisdiction) > 0:
+            return str(jurisdiction[0])
+        else:
+            return "unknown"
+    elif jurisdiction is None:
+        return "unknown"
+    else:
+        return str(jurisdiction)
+
 def get_jurisdiction_name(jurisdiction_id):
     """Get a jurisdiction name from its ID"""
-    # Ensure jurisdiction_id is a string
-    if isinstance(jurisdiction_id, list):
-        if len(jurisdiction_id) > 0:
-            jurisdiction_id = str(jurisdiction_id[0])
-        else:
-            return "Unknown Jurisdiction"
-    
-    # Convert to string if not already
-    jurisdiction_id = str(jurisdiction_id)
+    # jurisdiction_id should already be a string at this point
+    # but let's be extra safe
+    if not isinstance(jurisdiction_id, str):
+        jurisdiction_id = str(jurisdiction_id)
     
     # Get the lowercase version for case-insensitive lookup
     jurisdiction_id_lower = jurisdiction_id.lower()
@@ -412,6 +423,9 @@ def get_jurisdiction_name(jurisdiction_id):
 
 def generate_sample_requirements(jurisdiction, score):
     """Generate sample requirements for testing"""
+    # Ensure jurisdiction is a string
+    jurisdiction = str(jurisdiction)
+    
     categories = ['KYC/AML', 'Data Protection', 'Reporting', 'Licensing', 'Risk Management']
     statuses = ['met', 'partial', 'not-met']
     risks = ['high', 'medium', 'low']
