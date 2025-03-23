@@ -32,7 +32,7 @@ const ComplianceCard: React.FC<ComplianceCardProps> = ({
   complianceScore,
   status,
   riskLevel,
-  requirements,
+  requirements = { total: 0, met: 0 }, // Provide default value
   recentChanges,
   error,
   onClick,
