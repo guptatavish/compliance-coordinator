@@ -31,6 +31,11 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    
+    // Ensure jurisdictions are properly formatted
+    if (companyProfile.currentJurisdictions && !Array.isArray(companyProfile.currentJurisdictions)) {
+      companyProfile.currentJurisdictions = [String(companyProfile.currentJurisdictions)];
+    }
 
     console.log(`Forwarding compliance evaluation request to Python backend at ${PYTHON_API_URL}/analyze-compliance`);
     
@@ -50,7 +55,7 @@ serve(async (req) => {
     if (!pythonResponse.ok) {
       const errorData = await pythonResponse.text();
       console.error("Python backend error:", errorData);
-      throw new Error(`Python backend error: ${pythonResponse.status}`);
+      throw new Error(`Python backend error: ${pythonResponse.status} - ${errorData}`);
     }
     
     const data = await pythonResponse.json();

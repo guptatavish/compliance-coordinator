@@ -189,7 +189,7 @@ def analyze_compliance():
         
         documents = data.get('documents', [])
         
-        # Ensure jurisdiction is a string for our processing
+        # Make sure jurisdiction is a string for our processing
         jurisdiction_str = normalize_jurisdiction(jurisdiction)
             
         # Print info about the request
@@ -273,7 +273,7 @@ def analyze_compliance():
         
         # Create the response
         response = {
-            "jurisdictionId": jurisdiction,
+            "jurisdictionId": jurisdiction_str,
             "jurisdictionName": get_jurisdiction_name(jurisdiction_str),
             "complianceScore": int(compliance_score),
             "status": status,
@@ -288,6 +288,53 @@ def analyze_compliance():
         }
         
         return jsonify(response)
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/export-full-compliance-report', methods=['POST'])
+def export_full_compliance_report():
+    """Export full compliance report as PDF"""
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        api_key = data.get('apiKey')
+        if not api_key:
+            return jsonify({"error": "API key is required"}), 400
+        
+        company_profile = data.get('companyProfile')
+        if not company_profile:
+            return jsonify({"error": "Company profile is required"}), 400
+        
+        jurisdiction_id = data.get('jurisdictionId')
+        if not jurisdiction_id:
+            return jsonify({"error": "Jurisdiction ID is required"}), 400
+        
+        # Normalize jurisdiction to a string
+        jurisdiction_str = normalize_jurisdiction(jurisdiction_id)
+        
+        # Create a sample PDF report
+        # In a real implementation, this would call Perplexity API to generate a real report
+        report_content = f"""
+        # Compliance Report for {company_profile.get('companyName', 'Unknown Company')}
+        ## Jurisdiction: {get_jurisdiction_name(jurisdiction_str)}
+        
+        This is a sample compliance report. In a real implementation, this would be a detailed 
+        report generated using the Perplexity API, analyzing the company's compliance with 
+        regulations in {get_jurisdiction_name(jurisdiction_str)}.
+        """
+        
+        # Return a sample PDF file
+        # In production, we would use a proper PDF generation library
+        return report_content, 200, {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': f'attachment; filename="compliance_report_{jurisdiction_str}.pdf"'
+        }
     
     except Exception as e:
         import traceback
@@ -367,12 +414,17 @@ def export_regulatory_doc():
     """Export a regulatory reference document"""
     try:
         data = request.json
-        jurisdiction = data.get('jurisdiction')
-        doc_type = data.get('docType', 'full')
         
+        # Ensure we have valid inputs with consistent types
+        jurisdiction = data.get('jurisdiction')
+        if not jurisdiction:
+            return jsonify({"error": "Jurisdiction is required"}), 400
+            
         # Normalize jurisdiction to a string
         jurisdiction_str = normalize_jurisdiction(jurisdiction)
-            
+        
+        doc_type = data.get('docType', 'full')
+        
         # Implementation would generate a document based on the jurisdiction and doc type
         # This is a placeholder that returns a simple text document
         
@@ -382,6 +434,8 @@ def export_regulatory_doc():
         }
     
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 def normalize_jurisdiction(jurisdiction):
@@ -401,13 +455,8 @@ def normalize_jurisdiction(jurisdiction):
 
 def get_jurisdiction_name(jurisdiction_id):
     """Get a jurisdiction name from its ID"""
-    # jurisdiction_id should already be a string at this point
-    # but let's be extra safe
-    if not isinstance(jurisdiction_id, str):
-        jurisdiction_id = str(jurisdiction_id)
-    
-    # Get the lowercase version for case-insensitive lookup
-    jurisdiction_id_lower = jurisdiction_id.lower()
+    # Ensure jurisdiction_id is a string
+    jurisdiction_id_str = normalize_jurisdiction(jurisdiction_id)
     
     jurisdiction_names = {
         'us': 'United States',
@@ -419,12 +468,13 @@ def get_jurisdiction_name(jurisdiction_id):
         'hk': 'Hong Kong'
     }
     
-    return jurisdiction_names.get(jurisdiction_id_lower, jurisdiction_id)
+    # Case insensitive lookup
+    return jurisdiction_names.get(jurisdiction_id_str.lower(), jurisdiction_id_str)
 
 def generate_sample_requirements(jurisdiction, score):
     """Generate sample requirements for testing"""
     # Ensure jurisdiction is a string
-    jurisdiction = str(jurisdiction)
+    jurisdiction_str = normalize_jurisdiction(jurisdiction)
     
     categories = ['KYC/AML', 'Data Protection', 'Reporting', 'Licensing', 'Risk Management']
     statuses = ['met', 'partial', 'not-met']
@@ -450,9 +500,9 @@ def generate_sample_requirements(jurisdiction, score):
         risk = risks[0] if status == 'not-met' else risks[1] if status == 'partial' else risks[2]
         
         requirement = {
-            "id": f"req-{jurisdiction}-{i}",
-            "title": f"Requirement {i+1} for {get_jurisdiction_name(jurisdiction)}",
-            "description": f"This is a sample requirement description for {get_jurisdiction_name(jurisdiction)}.",
+            "id": f"req-{jurisdiction_str}-{i}",
+            "title": f"Requirement {i+1} for {get_jurisdiction_name(jurisdiction_str)}",
+            "description": f"This is a sample requirement description for {get_jurisdiction_name(jurisdiction_str)}.",
             "status": status,
             "category": categories[i % len(categories)],
             "risk": risk,
