@@ -22,28 +22,6 @@ export const savePerplexityApiKey = (apiKey: string): void => {
 };
 
 /**
- * Gets the stored Mistral API key from localStorage
- */
-export const getMistralApiKey = (): string | null => {
-  return localStorage.getItem('mistral_api_key');
-};
-
-/**
- * Checks if the Mistral API key is available
- */
-export const hasMistralApiKey = (): boolean => {
-  const key = getMistralApiKey();
-  return !!key && key.trim().length > 0;
-};
-
-/**
- * Saves the Mistral API key to localStorage
- */
-export const saveMistralApiKey = (apiKey: string): void => {
-  localStorage.setItem('mistral_api_key', apiKey);
-};
-
-/**
  * Base URL for the Python backend API
  * Change this to your actual Python API URL when deployed
  */

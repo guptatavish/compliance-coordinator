@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -108,17 +109,11 @@ const Dashboard: React.FC = () => {
     let met = 0;
     
     savedAnalyses.forEach(analysis => {
-      if (analysis.requirements) {
-        total += analysis.requirements.total || 0;
-        met += analysis.requirements.met || 0;
-      }
+      total += analysis.requirements.total;
+      met += analysis.requirements.met;
     });
     
-    return { 
-      total, 
-      met, 
-      percentage: total > 0 ? Math.round((met / total) * 100) : 0 
-    };
+    return { total, met, percentage: total > 0 ? Math.round((met / total) * 100) : 0 };
   };
 
   const { highest, lowest } = getExtremeJurisdictions();
