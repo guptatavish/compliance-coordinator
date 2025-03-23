@@ -16,7 +16,7 @@ serve(async (req) => {
   }
 
   try {
-    const { companyProfile, apiKey, mistralApiKey, uploadedDocuments, useAiJudge } = await req.json();
+    const { companyProfile, apiKey, mistralApiKey, uploadedDocuments } = await req.json();
     
     if (!apiKey) {
       return new Response(
@@ -44,8 +44,7 @@ serve(async (req) => {
         companyProfile, 
         apiKey, 
         mistralApiKey: mistralApiKey || null,
-        uploadedDocuments: uploadedDocuments || [],
-        useAiJudge: useAiJudge || false  // New flag to use AI judge
+        uploadedDocuments: uploadedDocuments || []
       })
     });
     

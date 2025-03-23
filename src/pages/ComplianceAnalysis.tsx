@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -5,14 +6,11 @@ import ComplianceCard from '../components/ComplianceCard';
 import StatusChart from '../components/StatusChart';
 import RequirementDetailsDialog from '../components/RequirementDetailsDialog';
 import RegulatoryDocumentDialog from '../components/RegulatoryDocumentDialog';
-import ComplianceMethodSelect from '../components/ComplianceMethodSelect';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
-import { ProgressSteps, ProgressStep } from '@/components/ui/progress-steps';
 import { jurisdictions } from '../components/JurisdictionSelect';
 import { useAuth } from '../contexts/AuthContext';
 import { getPerplexityApiKey, hasPerplexityApiKey } from '@/utils/apiKeys';
@@ -65,18 +63,6 @@ const ComplianceAnalysis: React.FC = () => {
   const [requirementDialogOpen, setRequirementDialogOpen] = useState(false);
   const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState(0);
-  const [useAiJudge, setUseAiJudge] = useState(false);
-  const [analysisSteps, setAnalysisSteps] = useState<ProgressStep[]>([
-    { id: 'init', label: 'Initializing analysis', status: 'pending' },
-    { id: 'data', label: 'Processing company profile', status: 'pending' },
-    { id: 'regulations', label: 'Retrieving regulatory requirements', status: 'pending' },
-    { id: 'analyze', label: 'Analyzing compliance status', status: 'pending' },
-    { id: 'score', label: 'Calculating compliance scores', status: 'pending' },
-    { id: 'recommendations', label: 'Generating recommendations', status: 'pending' },
-    { id: 'complete', label: 'Finalizing report', status: 'pending' }
-  ]);
-  const [activeStepIndex, setActiveStepIndex] = useState(0);
   
   const hasCompanyProfile = !!localStorage.getItem('companyProfile');
   const companyProfileData = hasCompanyProfile 
@@ -104,6 +90,7 @@ const ComplianceAnalysis: React.FC = () => {
     checkBackendHealth();
   }, []);
 
+  // Load previous analyses from local storage
   useEffect(() => {
     const loadPreviousAnalyses = () => {
       const savedAnalyses = localStorage.getItem('historicalAnalyses');
@@ -113,6 +100,7 @@ const ComplianceAnalysis: React.FC = () => {
           const parsedAnalyses = JSON.parse(savedAnalyses) as JurisdictionData[][];
           setHistoricalAnalyses(parsedAnalyses);
           
+          // If we have historical analyses, set the latest one as active
           if (parsedAnalyses.length > 0) {
             setJurisdictionsData(parsedAnalyses[0]);
             setAnalysisComplete(true);
@@ -142,55 +130,6 @@ const ComplianceAnalysis: React.FC = () => {
     }
   }, [selectedJurisdiction]);
 
-  const updateAnalysisStep = (stepId: string, status: 'pending' | 'processing' | 'complete' | 'error', description?: string) => {
-    setAnalysisSteps(steps => 
-      steps.map(step => 
-        step.id === stepId 
-          ? { ...step, status, description: description || step.description } 
-          : step
-      )
-    );
-    
-    const newActiveIndex = analysisSteps.findIndex(step => step.id === stepId);
-    if (newActiveIndex >= 0) {
-      setActiveStepIndex(newActiveIndex);
-    }
-  };
-
-  const simulateAnalysisProgress = () => {
-    setAnalysisSteps(steps => steps.map(step => ({ ...step, status: 'pending', description: undefined })));
-    setActiveStepIndex(0);
-    setAnalysisProgress(0);
-    
-    const totalSteps = analysisSteps.length;
-    let currentStep = 0;
-    
-    const progressInterval = setInterval(() => {
-      if (currentStep < totalSteps) {
-        const newProgress = Math.min(Math.round((currentStep + 1) / totalSteps * 100), 95);
-        setAnalysisProgress(newProgress);
-        
-        updateAnalysisStep(analysisSteps[currentStep].id, 'processing');
-        
-        setTimeout(() => {
-          updateAnalysisStep(analysisSteps[currentStep].id, 'complete');
-          currentStep++;
-          
-          if (currentStep < totalSteps) {
-            updateAnalysisStep(analysisSteps[currentStep].id, 'processing');
-          }
-        }, 1500);
-      } else {
-        clearInterval(progressInterval);
-        setAnalysisProgress(100);
-      }
-    }, 2000);
-    
-    return () => {
-      clearInterval(progressInterval);
-    };
-  };
-
   const handleRunAnalysis = async () => {
     if (!hasPerplexityApiKey()) {
       toast({
@@ -211,8 +150,6 @@ const ComplianceAnalysis: React.FC = () => {
     }
 
     setIsAnalyzing(true);
-    
-    const stopProgressSimulation = simulateAnalysisProgress();
     
     try {
       let companyId: string | null = null;
@@ -242,12 +179,11 @@ const ComplianceAnalysis: React.FC = () => {
         console.log(`Analyzing jurisdiction: ${jurisdictionId}`);
         
         try {
-          const result = await analyzeComplianceWithPython(jurisdictionId, useAiJudge);
+          const result = await analyzeComplianceWithPython(jurisdictionId);
           
           const matchingJurisdiction = jurisdictions.find(j => j.id === result.jurisdictionId);
-          const enrichedResult: JurisdictionData = {
+          const enrichedResult = {
             ...result,
-            requirementsList: result.requirementsList || [],
             flag: matchingJurisdiction?.flag || '🏳️',
             analysisDate: currentDate
           };
@@ -322,18 +258,15 @@ const ComplianceAnalysis: React.FC = () => {
         }
       }
       
-      stopProgressSimulation();
-      setAnalysisProgress(100);
-      
-      updateAnalysisStep('complete', 'complete');
-      
       setJurisdictionsData(analysisResults);
       setAnalysisComplete(true);
       
+      // Update historical analyses
       const updatedHistory = [analysisResults, ...historicalAnalyses];
       setHistoricalAnalyses(updatedHistory);
       setActiveHistoryIndex(0);
       
+      // Save to localStorage
       localStorage.setItem('historicalAnalyses', JSON.stringify(updatedHistory));
       
       toast({
@@ -343,12 +276,6 @@ const ComplianceAnalysis: React.FC = () => {
       
     } catch (error) {
       console.error("Analysis error:", error);
-      
-      stopProgressSimulation();
-      
-      const currentStepId = analysisSteps[activeStepIndex].id;
-      updateAnalysisStep(currentStepId, 'error', error instanceof Error ? error.message : "An unexpected error occurred");
-      
       toast({
         title: "Analysis Failed",
         description: error instanceof Error ? error.message : "An unexpected error occurred",
@@ -514,78 +441,46 @@ const ComplianceAnalysis: React.FC = () => {
           </Button>
         </div>
         
-        {!isAnalyzing && !analysisComplete && (
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="md:col-span-2">
-              <Card className="mb-8">
-                <CardContent className="pt-6">
-                  <div className="text-center py-8">
-                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4 mx-auto">
-                      <LineChart className="h-8 w-8 text-primary" />
-                    </div>
-                    <h2 className="text-2xl font-semibold mb-2">Run Compliance Analysis</h2>
-                    <p className="text-muted-foreground mb-8 max-w-md mx-auto">
-                      Analyze your compliance status across all jurisdictions to identify gaps and receive recommendations.
-                    </p>
-                    <Button 
-                      onClick={handleRunAnalysis} 
-                      disabled={!hasPerplexityApiKey() || pythonBackendAvailable === false}
-                      size="lg"
-                    >
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                      Run Analysis
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-            
-            <div>
-              <ComplianceMethodSelect
-                useAiJudge={useAiJudge}
-                setUseAiJudge={setUseAiJudge}
-              />
-            </div>
-          </div>
-        )}
-        
         {isAnalyzing && (
           <Card className="mb-8">
             <CardContent className="pt-6">
-              <div className="py-6">
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-xl font-semibold">Running Analysis</h2>
-                  <span className="text-sm font-medium text-muted-foreground">{analysisProgress}%</span>
+              <div className="text-center py-8">
+                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4 mx-auto">
+                  <RefreshCw className="h-8 w-8 text-primary animate-spin" />
                 </div>
-                
-                <Progress 
-                  value={analysisProgress} 
-                  className="h-2 mb-6"
-                  indicatorClassName={analysisProgress === 100 ? "bg-success-500" : ""}
-                />
-                
-                <div className="mt-6">
-                  <ProgressSteps
-                    steps={analysisSteps}
-                    activeStep={activeStepIndex}
-                  />
+                <h2 className="text-2xl font-semibold mb-2">Running Analysis</h2>
+                <p className="text-muted-foreground mb-4 max-w-md mx-auto">
+                  Analyzing regulatory requirements and compliance status across all jurisdictions...
+                </p>
+                <div className="max-w-md mx-auto flex flex-col gap-2 text-left">
+                  <p className="text-sm">• Retrieving jurisdictional data</p>
+                  <p className="text-sm">• Analyzing regulatory requirements</p>
+                  <p className="text-sm">• Comparing current compliance status</p>
+                  <p className="text-sm">• Generating recommendations</p>
                 </div>
-                
-                {useAiJudge && (
-                  <div className="mt-6 p-4 rounded-lg bg-primary/5 border border-primary/10">
-                    <div className="flex items-center">
-                      <div className="mr-3 p-2 bg-primary/10 rounded-full">
-                        <InfoIcon className="h-4 w-4 text-primary" />
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-sm">AI Judge Mode Active</h4>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Using advanced AI analysis for detailed compliance evaluation. This may take longer but provides more comprehensive results.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        
+        {!isAnalyzing && !analysisComplete && (
+          <Card className="mb-8">
+            <CardContent className="pt-6">
+              <div className="text-center py-8">
+                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4 mx-auto">
+                  <LineChart className="h-8 w-8 text-primary" />
+                </div>
+                <h2 className="text-2xl font-semibold mb-2">Run Compliance Analysis</h2>
+                <p className="text-muted-foreground mb-8 max-w-md mx-auto">
+                  Analyze your compliance status across all jurisdictions to identify gaps and receive recommendations.
+                </p>
+                <Button 
+                  onClick={handleRunAnalysis} 
+                  disabled={!hasPerplexityApiKey() || pythonBackendAvailable === false}
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Run Analysis
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -881,6 +776,7 @@ const ComplianceAnalysis: React.FC = () => {
           </div>
         )}
         
+        {/* Requirement Details Dialog */}
         {selectedRequirement && selectedJurisdiction && (
           <RequirementDetailsDialog
             requirementId={selectedRequirement.id}
@@ -891,6 +787,7 @@ const ComplianceAnalysis: React.FC = () => {
           />
         )}
         
+        {/* Regulatory Document Dialog */}
         {selectedDocument && selectedJurisdiction && (
           <RegulatoryDocumentDialog
             document={selectedDocument}
@@ -905,3 +802,4 @@ const ComplianceAnalysis: React.FC = () => {
 };
 
 export default ComplianceAnalysis;
+

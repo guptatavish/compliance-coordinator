@@ -1,3 +1,4 @@
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
@@ -6,20 +7,16 @@ import base64
 from compliance_evaluator import PerplexityComplianceEvaluator
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})  # Enable CORS for all routes and origins
+CORS(app)
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"})
 
-@app.route('/upload-company-documents', methods=['POST', 'OPTIONS'])
+@app.route('/upload-company-documents', methods=['POST'])
 def upload_company_documents():
     """Upload company documents for analysis"""
-    # Handle preflight requests
-    if request.method == 'OPTIONS':
-        return _build_cors_preflight_response()
-        
     try:
         if 'files[]' not in request.files:
             return jsonify({"error": "No files provided"}), 400
@@ -43,34 +40,30 @@ def upload_company_documents():
                 "size": len(file_content)
             })
         
-        return _corsify_response(jsonify({"documents": uploaded_documents}))
+        return jsonify({"documents": uploaded_documents})
     
     except Exception as e:
-        return _corsify_response(jsonify({"error": str(e)})), 500
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/analyze-regulations', methods=['POST', 'OPTIONS'])
+@app.route('/analyze-regulations', methods=['POST'])
 def analyze_regulations():
     """Main endpoint for analyzing regulations across multiple jurisdictions"""
-    # Handle preflight requests
-    if request.method == 'OPTIONS':
-        return _build_cors_preflight_response()
-        
     try:
         data = request.json
         
         if not data:
-            return _corsify_response(jsonify({"error": "No data provided"})), 400
+            return jsonify({"error": "No data provided"}), 400
         
         api_key = data.get('apiKey')
         if not api_key:
-            return _corsify_response(jsonify({"error": "API key is required"})), 400
+            return jsonify({"error": "API key is required"}), 400
         
         company_profile = data.get('companyProfile')
         if not company_profile:
-            return _corsify_response(jsonify({"error": "Company profile is required"})), 400
+            return jsonify({"error": "Company profile is required"}), 400
         
         if not company_profile.get('currentJurisdictions') or len(company_profile.get('currentJurisdictions', [])) == 0:
-            return _corsify_response(jsonify({"error": "No jurisdictions selected in company profile"})), 400
+            return jsonify({"error": "No jurisdictions selected in company profile"}), 400
         
         # Initialize the evaluator with the API key
         evaluator = PerplexityComplianceEvaluator(api_key)
@@ -155,37 +148,33 @@ def analyze_regulations():
                     "requirementsList": []
                 })
         
-        return _corsify_response(jsonify({"analysisResults": analysis_results}))
+        return jsonify({"analysisResults": analysis_results})
         
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return _corsify_response(jsonify({"error": str(e)})), 500
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/analyze-compliance', methods=['POST', 'OPTIONS'])
+@app.route('/analyze-compliance', methods=['POST'])
 def analyze_compliance():
     """Analyze company compliance based on profile and jurisdiction"""
-    # Handle preflight requests
-    if request.method == 'OPTIONS':
-        return _build_cors_preflight_response()
-        
     try:
         data = request.json
         
         if not data:
-            return _corsify_response(jsonify({"error": "No data provided"})), 400
+            return jsonify({"error": "No data provided"}), 400
         
         api_key = data.get('apiKey')
         if not api_key:
-            return _corsify_response(jsonify({"error": "API key is required"})), 400
+            return jsonify({"error": "API key is required"}), 400
         
         company_profile = data.get('companyProfile')
         if not company_profile:
-            return _corsify_response(jsonify({"error": "Company profile is required"})), 400
+            return jsonify({"error": "Company profile is required"}), 400
         
         jurisdiction = data.get('jurisdiction')
         if not jurisdiction:
-            return _corsify_response(jsonify({"error": "Jurisdiction is required"})), 400
+            return jsonify({"error": "Jurisdiction is required"}), 400
         
         documents = data.get('documents', [])
         
@@ -285,29 +274,25 @@ def analyze_compliance():
             "recommendations": analysis.get("recommendations", []) if isinstance(analysis.get("recommendations"), list) else []
         }
         
-        return _corsify_response(jsonify(response))
+        return jsonify(response)
     
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return _corsify_response(jsonify({"error": str(e)})), 500
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/fetch-saved-analyses', methods=['POST', 'OPTIONS'])
+@app.route('/fetch-saved-analyses', methods=['POST'])
 def fetch_saved_analyses():
     """Fetch saved compliance analyses for a company"""
-    # Handle preflight requests
-    if request.method == 'OPTIONS':
-        return _build_cors_preflight_response()
-        
     try:
         data = request.json
         
         if not data:
-            return _corsify_response(jsonify({"error": "No data provided"})), 400
+            return jsonify({"error": "No data provided"}), 400
         
         company_name = data.get('companyName')
         if not company_name:
-            return _corsify_response(jsonify({"error": "Company name is required"})), 400
+            return jsonify({"error": "Company name is required"}), 400
         
         # This would normally query a database, but for now we'll return some sample data
         # In a real implementation, this would fetch from Supabase
@@ -344,18 +329,14 @@ def fetch_saved_analyses():
                 "requirementsList": generate_sample_requirements(jur, score)
             })
         
-        return _corsify_response(jsonify({"analyses": analyses}))
+        return jsonify({"analyses": analyses})
     
     except Exception as e:
-        return _corsify_response(jsonify({"error": str(e)})), 500
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/export-report/<format>', methods=['POST', 'OPTIONS'])
+@app.route('/export-report/<format>', methods=['POST'])
 def export_report(format):
     """Export a compliance report in the specified format"""
-    # Handle preflight requests
-    if request.method == 'OPTIONS':
-        return _build_cors_preflight_response()
-        
     try:
         # Implementation would export a report in the specified format
         # This is a placeholder that returns a simple text report
@@ -366,15 +347,11 @@ def export_report(format):
         }
     
     except Exception as e:
-        return _corsify_response(jsonify({"error": str(e)})), 500
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/export-regulatory-doc', methods=['POST', 'OPTIONS'])
+@app.route('/export-regulatory-doc', methods=['POST'])
 def export_regulatory_doc():
     """Export a regulatory reference document"""
-    # Handle preflight requests
-    if request.method == 'OPTIONS':
-        return _build_cors_preflight_response()
-        
     try:
         data = request.json
         jurisdiction = data.get('jurisdiction')
@@ -389,7 +366,7 @@ def export_regulatory_doc():
         }
     
     except Exception as e:
-        return _corsify_response(jsonify({"error": str(e)})), 500
+        return jsonify({"error": str(e)}), 500
 
 def get_jurisdiction_name(jurisdiction_id):
     """Get a jurisdiction name from its ID"""
@@ -447,17 +424,5 @@ def generate_sample_requirements(jurisdiction, score):
     
     return requirements
 
-def _build_cors_preflight_response():
-    response = jsonify({})
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-    return response
-
-def _corsify_response(response):
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    return response
-
 if __name__ == '__main__':
-    print("Starting Flask server on http://localhost:5000")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, port=5000)
