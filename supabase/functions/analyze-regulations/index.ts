@@ -45,8 +45,7 @@ serve(async (req) => {
         apiKey, 
         mistralApiKey: mistralApiKey || null,
         uploadedDocuments: uploadedDocuments || [],
-        useAiJudge: useAiJudge || false,
-        storeResults: true  // Flag to indicate results should be stored
+        useAiJudge: useAiJudge || false  // New flag to use AI judge
       })
     });
     
