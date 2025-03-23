@@ -203,6 +203,15 @@ def analyze_compliance():
             "business_type": company_profile.get('businessType', '')
         }
         
+        # FIX: Safe handling of current_jurisdictions list
+        country = jurisdiction
+        if isinstance(jurisdiction, list) and len(jurisdiction) > 0:
+            # If jurisdiction is a list, use the first item
+            country = str(jurisdiction[0])
+        elif not isinstance(jurisdiction, str):
+            # If it's neither a string nor a list, convert to string
+            country = str(jurisdiction)
+        
         # Now use this data when evaluating compliance
         analysis = evaluator.evaluate_compliance(company_data, documents)
         
@@ -261,7 +270,7 @@ def analyze_compliance():
         # Create the response
         response = {
             "jurisdictionId": jurisdiction,
-            "jurisdictionName": get_jurisdiction_name(jurisdiction),
+            "jurisdictionName": get_jurisdiction_name(country),  # FIX: Use the processed country string here
             "complianceScore": int(compliance_score),
             "status": status,
             "riskLevel": risk_level,
@@ -357,6 +366,12 @@ def export_regulatory_doc():
         jurisdiction = data.get('jurisdiction')
         doc_type = data.get('docType', 'full')
         
+        # Check if jurisdiction is a list and convert it to a string
+        if isinstance(jurisdiction, list) and len(jurisdiction) > 0:
+            jurisdiction = jurisdiction[0]
+        elif not isinstance(jurisdiction, str):
+            jurisdiction = str(jurisdiction)
+            
         # Implementation would generate a document based on the jurisdiction and doc type
         # This is a placeholder that returns a simple text document
         
@@ -370,6 +385,19 @@ def export_regulatory_doc():
 
 def get_jurisdiction_name(jurisdiction_id):
     """Get a jurisdiction name from its ID"""
+    # Ensure jurisdiction_id is a string
+    if isinstance(jurisdiction_id, list):
+        if len(jurisdiction_id) > 0:
+            jurisdiction_id = str(jurisdiction_id[0])
+        else:
+            return "Unknown Jurisdiction"
+    
+    # Convert to string if not already
+    jurisdiction_id = str(jurisdiction_id)
+    
+    # Get the lowercase version for case-insensitive lookup
+    jurisdiction_id_lower = jurisdiction_id.lower()
+    
     jurisdiction_names = {
         'us': 'United States',
         'uk': 'United Kingdom',
@@ -380,7 +408,7 @@ def get_jurisdiction_name(jurisdiction_id):
         'hk': 'Hong Kong'
     }
     
-    return jurisdiction_names.get(jurisdiction_id.lower(), jurisdiction_id)
+    return jurisdiction_names.get(jurisdiction_id_lower, jurisdiction_id)
 
 def generate_sample_requirements(jurisdiction, score):
     """Generate sample requirements for testing"""
