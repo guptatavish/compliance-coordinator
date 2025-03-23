@@ -16,7 +16,7 @@ serve(async (req) => {
   }
 
   try {
-    const { companyProfile, apiKey, mistralApiKey, uploadedDocuments } = await req.json();
+    const { companyProfile, apiKey } = await req.json();
     
     if (!apiKey) {
       return new Response(
@@ -34,24 +34,19 @@ serve(async (req) => {
 
     console.log(`Forwarding regulation analysis request to Python backend at ${PYTHON_API_URL}/analyze-regulations`);
     
-    // Forward the request to the Python backend with all necessary data
+    // Forward the request to the Python backend
     const pythonResponse = await fetch(`${PYTHON_API_URL}/analyze-regulations`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ 
-        companyProfile, 
-        apiKey, 
-        mistralApiKey: mistralApiKey || null,
-        uploadedDocuments: uploadedDocuments || []
-      })
+      body: JSON.stringify({ companyProfile, apiKey })
     });
     
     if (!pythonResponse.ok) {
       const errorData = await pythonResponse.text();
       console.error("Python backend error:", errorData);
-      throw new Error(`Python backend error: ${pythonResponse.status} - ${errorData}`);
+      throw new Error(`Python backend error: ${pythonResponse.status}`);
     }
     
     const data = await pythonResponse.json();

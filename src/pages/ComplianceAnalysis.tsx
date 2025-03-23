@@ -4,29 +4,17 @@ import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import ComplianceCard from '../components/ComplianceCard';
 import StatusChart from '../components/StatusChart';
-import RequirementDetailsDialog from '../components/RequirementDetailsDialog';
-import RegulatoryDocumentDialog from '../components/RegulatoryDocumentDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Skeleton } from '@/components/ui/skeleton';
 import { jurisdictions } from '../components/JurisdictionSelect';
 import { useAuth } from '../contexts/AuthContext';
 import { getPerplexityApiKey, hasPerplexityApiKey } from '@/utils/apiKeys';
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { AlertTriangle, BookOpen, Calendar, CheckSquare, Clock, Download, FileText, History, InfoIcon, LineChart, RefreshCw } from 'lucide-react';
-import { 
-  analyzeComplianceWithPython, 
-  checkPythonBackendHealth, 
-  ComplianceStatus, 
-  ComplianceLevel, 
-  Requirement, 
-  ComplianceResult,
-  RegulatoryReference,
-  getRegulatoryDocuments
-} from '../services/ComplianceService';
+import { analyzeComplianceWithPython, checkPythonBackendHealth, ComplianceStatus, ComplianceLevel, Requirement, ComplianceResult } from '../services/ComplianceService';
 
 interface JurisdictionData {
   jurisdictionId: string;
@@ -43,7 +31,6 @@ interface JurisdictionData {
   requirementsList: Requirement[];
   error?: string;
   analysisDate?: string;
-  regulatoryReferences?: RegulatoryReference[];
 }
 
 const ComplianceAnalysis: React.FC = () => {
@@ -57,12 +44,6 @@ const ComplianceAnalysis: React.FC = () => {
   const [pythonBackendAvailable, setPythonBackendAvailable] = useState<boolean | null>(null);
   const [historicalAnalyses, setHistoricalAnalyses] = useState<JurisdictionData[][]>([]);
   const [activeHistoryIndex, setActiveHistoryIndex] = useState(0);
-  const [regulatoryDocuments, setRegulatoryDocuments] = useState<RegulatoryReference[]>([]);
-  const [selectedRequirement, setSelectedRequirement] = useState<Requirement | null>(null);
-  const [selectedDocument, setSelectedDocument] = useState<RegulatoryReference | null>(null);
-  const [requirementDialogOpen, setRequirementDialogOpen] = useState(false);
-  const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
-  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   
   const hasCompanyProfile = !!localStorage.getItem('companyProfile');
   const companyProfileData = hasCompanyProfile 
@@ -113,22 +94,6 @@ const ComplianceAnalysis: React.FC = () => {
     
     loadPreviousAnalyses();
   }, []);
-
-  useEffect(() => {
-    if (selectedJurisdiction) {
-      setIsLoadingDocuments(true);
-      getRegulatoryDocuments(selectedJurisdiction)
-        .then((documents) => {
-          setRegulatoryDocuments(documents);
-        })
-        .catch((error) => {
-          console.error("Error fetching regulatory documents:", error);
-        })
-        .finally(() => {
-          setIsLoadingDocuments(false);
-        });
-    }
-  }, [selectedJurisdiction]);
 
   const handleRunAnalysis = async () => {
     if (!hasPerplexityApiKey()) {
@@ -291,16 +256,6 @@ const ComplianceAnalysis: React.FC = () => {
       setJurisdictionsData(historicalAnalyses[index]);
       setActiveHistoryIndex(index);
     }
-  };
-
-  const handleRequirementClick = (requirement: Requirement) => {
-    setSelectedRequirement(requirement);
-    setRequirementDialogOpen(true);
-  };
-
-  const handleDocumentClick = (document: RegulatoryReference) => {
-    setSelectedDocument(document);
-    setDocumentDialogOpen(true);
   };
 
   const selectedData = selectedJurisdiction
@@ -589,8 +544,7 @@ const ComplianceAnalysis: React.FC = () => {
                                 : req.status === 'partial'
                                 ? 'border-warning-100 bg-warning-50/30'
                                 : 'border-danger-100 bg-danger-50/30'
-                            } cursor-pointer hover:shadow-md transition-all`}
-                            onClick={() => handleRequirementClick(req)}
+                            }`}
                           >
                             <div className="flex items-start">
                               <div className={`p-2 rounded-full mr-3 ${
@@ -640,8 +594,7 @@ const ComplianceAnalysis: React.FC = () => {
                                 req.status === 'partial'
                                   ? 'border-warning-100 bg-warning-50/30'
                                   : 'border-danger-100 bg-danger-50/30'
-                              } cursor-pointer hover:shadow-md transition-all`}
-                              onClick={() => handleRequirementClick(req)}
+                              }`}
                             >
                               <div className="flex items-start">
                                 <div className={`p-2 rounded-full mr-3 ${
@@ -683,8 +636,7 @@ const ComplianceAnalysis: React.FC = () => {
                           .map((req, index) => (
                             <div 
                               key={req.id || `met-${index}`} 
-                              className="p-4 rounded-lg border border-success-100 bg-success-50/30 cursor-pointer hover:shadow-md transition-all"
-                              onClick={() => handleRequirementClick(req)}
+                              className="p-4 rounded-lg border border-success-100 bg-success-50/30"
                             >
                               <div className="flex items-start">
                                 <div className="p-2 rounded-full mr-3 bg-success-100 text-success-500">
@@ -717,84 +669,34 @@ const ComplianceAnalysis: React.FC = () => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    {isLoadingDocuments ? (
-                      <div className="space-y-4">
-                        <Skeleton className="w-full h-16" />
-                        <Skeleton className="w-full h-16" />
-                        <Skeleton className="w-full h-16" />
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {regulatoryDocuments.length > 0 ? (
-                          regulatoryDocuments.map((doc) => (
-                            <div 
-                              key={doc.id} 
-                              className="flex items-start p-3 border rounded-lg cursor-pointer hover:shadow-md transition-all"
-                              onClick={() => handleDocumentClick(doc)}
-                            >
-                              <div className="p-2 rounded-full mr-3 bg-primary/10">
-                                <BookOpen className="h-4 w-4 text-primary" />
-                              </div>
-                              <div className="flex-1">
-                                <h4 className="font-medium text-sm">
-                                  {doc.title}
-                                </h4>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {doc.description}
-                                </p>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                  <Button variant="link" size="sm" className="h-auto p-0 text-primary">
-                                    <FileText className="h-3 w-3 mr-1" />
-                                    View Document
-                                  </Button>
-                                  <span className="text-xs px-2 py-1 rounded-full bg-muted">
-                                    {doc.documentType}
-                                  </span>
-                                  {doc.issuer && (
-                                    <span className="text-xs text-muted-foreground">
-                                      Issued by: {doc.issuer}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-center py-8">
-                            <BookOpen className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
-                            <p className="text-muted-foreground">
-                              No regulatory documents are available for this jurisdiction yet.
-                            </p>
+                    <div className="space-y-4">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="flex items-start p-3 border rounded-lg">
+                          <div className="p-2 rounded-full mr-3 bg-primary/10">
+                            <BookOpen className="h-4 w-4 text-primary" />
                           </div>
-                        )}
-                      </div>
-                    )}
+                          <div>
+                            <h4 className="font-medium text-sm">
+                              {selectedData.jurisdictionName} Financial Regulation Document {i}
+                            </h4>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Official regulatory documentation for financial operations in {selectedData.jurisdictionName}
+                            </p>
+                            <div className="mt-2">
+                              <Button variant="link" size="sm" className="h-auto p-0 text-primary">
+                                <FileText className="h-3 w-3 mr-1" />
+                                View Document
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </CardContent>
                 </Card>
               </div>
             )}
           </div>
-        )}
-        
-        {/* Requirement Details Dialog */}
-        {selectedRequirement && selectedJurisdiction && (
-          <RequirementDetailsDialog
-            requirementId={selectedRequirement.id}
-            jurisdictionId={selectedJurisdiction}
-            initialRequirement={selectedRequirement}
-            open={requirementDialogOpen}
-            onOpenChange={setRequirementDialogOpen}
-          />
-        )}
-        
-        {/* Regulatory Document Dialog */}
-        {selectedDocument && selectedJurisdiction && (
-          <RegulatoryDocumentDialog
-            document={selectedDocument}
-            jurisdictionId={selectedJurisdiction}
-            open={documentDialogOpen}
-            onOpenChange={setDocumentDialogOpen}
-          />
         )}
       </div>
     </Layout>
@@ -802,4 +704,3 @@ const ComplianceAnalysis: React.FC = () => {
 };
 
 export default ComplianceAnalysis;
-
